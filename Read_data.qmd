@@ -1,0 +1,128 @@
+---
+title: "Read_data"
+author: "Alan jackson"
+format: html
+editor: visual
+---
+
+## Read in various datasets
+
+Read in and clean up data from solar panels, weather data, ERCOT data, and
+Smartmeter data.
+
+
+```{r init}
+#| echo: false
+
+library(tidyverse)
+
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+```
+
+##   Read the Tesla data
+
+```{r read Tesla data}
+#| echo: true
+ 
+filenames <- list.files(path = path,
+                        pattern="data.*csv$")
+
+filenames <- paste0(path,filenames)
+
+df <- filenames %>% 
+  purrr::map_dfr(read_csv) 
+
+df <- df %>% 
+  mutate(Date=lubridate::ymd_hms(`Date time`)) %>% 
+  select(-`Date time`) %>% 
+  rename(Home=`Home (kW)`,
+         Solar=`Solar (kW)`,
+         Powerwall=`Powerwall (kW)`,
+         Grid=`Grid (kW)`,
+         Pct_remain=`Energy Remaining (%)`)
+
+Home <- df
+
+```
+
+##        Read the ERCOT data
+
+```{r ercot}
+
+df <- readxl::read_excel(paste0(path, "Ercot_2021.xlsx"))
+
+df <- df %>% 
+  rbind(readxl::read_excel(paste0(path, "Ercot_2022.xlsx")))
+
+#   Look only at Houston Hub data and convert to actual time-date data
+
+df2 <- df %>% 
+  filter(`Settlement Point Name`=="HB_HOUSTON") %>% 
+  select(Date=`Delivery Date`,
+         Hour=`Delivery Hour`,
+         Interval=`Delivery Interval`,
+         Price=`Settlement Point Price`)
+
+df <- df2 %>% 
+  mutate(Date=lubridate::mdy_hm(paste(Date,
+                                      as.character(Hour),
+                                      as.character((Interval-1)*15)))) %>% 
+  select(Date, Price)
+
+Ercot <- df
+
+```
+
+##        Read in the Smart Meter data
+
+```{r smart meter}
+
+df <- read_csv(paste0(path, "SmartMeter_IntervalData.csv"))
+
+df2 <- df %>% 
+  select(USAGE_DATE, USAGE_START_TIME, USAGE_KWH, 
+         CONSUMPTION_SURPLUSGENERATION) %>% 
+  mutate(USAGE_KWH=if_else(stringr::str_detect(CONSUMPTION_SURPLUSGENERATION,
+                                               "Surplus Generation"), 
+                           USAGE_KWH*-1,
+                           USAGE_KWH)) %>% 
+  mutate(Date=lubridate::mdy_hms(paste0(USAGE_DATE, USAGE_START_TIME))) %>% 
+  select(Date, Usage=USAGE_KWH)
+
+Smart <- df2
+
+```
+
+##        Read in the weather data (for IAH)
+
+```{r IAH weather}
+
+df <- read_csv(paste0(path, "WeatherData.csv"))
+
+df2 <- df %>% 
+  select(Date=DATE,
+         Dewpoint=HourlyDewPointTemperature,
+         Temperature=HourlyDryBulbTemperature,
+         Precip=HourlyPrecipitation,
+         Humidity=HourlyRelativeHumidity,
+         Wind_dir=HourlyWindDirection,
+         Wind_spd=HourlyWindSpeed,
+         Sky=HourlySkyConditions) %>% 
+  mutate(Date=lubridate::ymd_hms(Date)) %>% 
+  mutate(Precip=as.numeric(if_else(stringr::str_detect(Precip, "T"), 
+                                   "0.001", Precip)))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
