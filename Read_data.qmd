@@ -111,7 +111,23 @@ df2 <- df %>%
          Sky=HourlySkyConditions) %>% 
   mutate(Date=lubridate::ymd_hms(Date)) %>% 
   mutate(Precip=as.numeric(if_else(stringr::str_detect(Precip, "T"), 
-                                   "0.001", Precip)))
+                                   "0.001", Precip))) %>% 
+  mutate(Overcast=stringr::str_detect(Sky, "OVC")) %>% 
+  filter(!is.na(Temperature)) %>% 
+  filter(!is.na(Precip))
+
+Weather <- df2
+
+```
+
+##        Save our cleaned files
+
+```{r save}
+
+saveRDS(Ercot, paste0(path, "Ercot.rds"))
+saveRDS(Home, paste0(path, "Home.rds"))
+saveRDS(Smart, paste0(path, "Smart.rds"))
+saveRDS(Weather, paste0(path, "Weather.rds"))
 
 ```
 
