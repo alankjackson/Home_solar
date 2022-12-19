@@ -24,10 +24,18 @@ df <- readRDS(paste0(path, "Ercot.rds"))
 
 ```{r initial plots}
 
+df <- df %>% 
+  mutate(Hour=hms::as_hms(Date)) %>% 
+  mutate(Month=lubridate::month(Date, label=TRUE))
 
+df %>% 
+  ggplot(aes(x=Hour, y=Price)) +
+  geom_point()
 
-
-
+df %>% 
+  ggplot(aes(x=Hour, y=Price)) +
+  geom_point()+
+  facet_wrap(vars(Month))
 
 ```
 
