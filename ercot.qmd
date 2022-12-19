@@ -1,0 +1,33 @@
+---
+title: "Analyze ERCoT Data"
+author: "Alan Jackson"
+format: html
+editor: visual
+---
+
+## Develop a cost model
+
+To analyze various solar buyback plans, I need to have an ERCoT model that will
+let me estimate what sort of wholesale prices might be available.
+
+```{r initialize}
+
+library(tidyverse)
+
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+df <- readRDS(paste0(path, "Ercot.rds"))
+
+```
+
+##  Plot the data
+
+```{r initial plots}
+
+
+
+
+
+
+```
+
