@@ -32,10 +32,17 @@ df <- df %>%
                      stringr::str_pad(lubridate::minute(Date), 2, "left", "0"))) %>% 
   mutate(Month=lubridate::month(Date, label=TRUE)) %>% 
   #   Allow for some consolidation
+  mutate(Year=lubridate::year(Date))  %>% 
+  mutate(Day_time=paste0(stringr::str_pad(lubridate::day(Date),2,"left","0"), ":",
+                         stringr::str_pad(lubridate::hour(Date),2,"left","0"), ":" ,
+                         stringr::str_pad(lubridate::minute(Date), 2, "left", "0")
+         )) %>% 
   mutate(Hour=lubridate::hour(Date))  
 
+#   quick look
+
 df %>% 
-  ggplot(aes(x=Hour, y=Price)) +
+  ggplot(aes(x=Day, y=Price)) +
   geom_point()+
   facet_wrap(vars(Month))+
   scale_y_continuous(labels=scales::dollar_format())+
@@ -46,6 +53,36 @@ df %>%
        x="Hour of Day",
        y="Dollars per mWh")
 
+#   Let's look at the extreme values in greater detail
+
+df %>% 
+  ggplot(aes(x=Price)) +
+  geom_histogram() +
+  facet_wrap(vars(Month), scales="free_x")+
+  scale_x_continuous(labels=scales::dollar_format())+
+  labs(title="ERCoT Price Data at Houston Hub",
+       subtitle="2021 and 2022",
+       x="Dollars per mWh")
+
+#   Look at data with price >$100
+
+df %>% 
+  filter(Year>2021) %>% 
+  ggplot(aes(y=Price, x=Date)) +
+  geom_line() +
+  facet_wrap(vars(lubridate::month(Date)), ncol=1, scales="free")+
+  labs(title="ERCoT Price Data at Houston Hub",
+       subtitle="2022",
+       x="Dollars per mWh")
+
+df %>% 
+  filter(Year==2021) %>% 
+  ggplot(aes(y=Price, x=Date)) +
+  geom_line() +
+  facet_wrap(vars(lubridate::month(Date)), ncol=1, scales="free")+
+  labs(title="ERCoT Price Data at Houston Hub",
+       subtitle="2021",
+       x="Dollars per mWh")
 
 
 
