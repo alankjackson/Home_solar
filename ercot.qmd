@@ -7,7 +7,7 @@ editor: visual
 
 ## Develop a cost model
 
-To analyze various solar buyback plans, I need to have an ERCoT model that will
+To analyze various solar buyback plans, I need to have an ERCOT model that will
 let me estimate what sort of wholesale prices might be available.
 
 ```{r initialize}
@@ -20,23 +20,89 @@ df <- readRDS(paste0(path, "Ercot.rds"))
 
 ```
 
+##    Look at the data
+
+Let's look at the data to get a feel for what is going on
+
+```{r initial look}
+
+df <- df %>% 
+  #   Create nice x-axis labels
+  mutate(Time=paste0(stringr::str_pad(lubridate::hour(Date),2,"left","0"), ":" ,
+                     stringr::str_pad(lubridate::minute(Date), 2, "left", "0"))) %>% 
+  mutate(Month=lubridate::month(Date, label=TRUE)) %>% 
+  #   Allow for some consolidation
+  mutate(Hour=lubridate::hour(Date))  
+
+df %>% 
+  ggplot(aes(x=Hour, y=Price)) +
+  geom_point()+
+  facet_wrap(vars(Month))+
+  scale_y_continuous(labels=scales::dollar_format())+
+  scale_x_discrete(breaks=c("00:00", "04:00", "08:00", "12:00",
+                            "16:00", "20:00", "24:00")) +
+  labs(title="ERCoT Price Data at Houston Hub",
+       subtitle="2021 and 2022",
+       x="Hour of Day",
+       y="Dollars per mWh")
+
+
+
+
+  #   Eliminate the Valentine's freeze data
+  # filter(Date<lubridate::ymd("2021-02-14") | 
+  #        Date>lubridate::ymd("2021-02-20"))
+
+
+```
+
 ##  Plot the data
 
 ```{r initial plots}
 
 df <- df %>% 
-  mutate(Hour=paste0(stringr::str_pad(lubridate::hour(Date),2,"left","0"), ":" ,
+  #   Create nice x-axis labels
+  mutate(Time=paste0(stringr::str_pad(lubridate::hour(Date),2,"left","0"), ":" ,
                      stringr::str_pad(lubridate::minute(Date), 2, "left", "0"))) %>% 
   mutate(Month=lubridate::month(Date, label=TRUE)) %>% 
+  mutate(Hour=lubridate::hour(Date)) %>% 
+  #   Eliminate the Valentine's freeze data
   filter(Date<lubridate::ymd("2021-02-14") | 
          Date>lubridate::ymd("2021-02-20"))
 
 foo <- df %>% 
   mutate(Price=Price+40) %>% # offset to get rid of negative numbers
-  filter(Hour=="18:00") 
+  mutate(week=lubridate::week(Date)) %>% 
+  filter(week<53)
 
-weibull <- MASS::fitdistr(foo$Price, 'weibull')
+weibull <- foo %>% 
+  group_by(Hour, week) %>% 
+     summarize(vec = list(Price)) %>% 
+  group_by(Hour, week) %>% 
+  mutate(scale=if_else(min(unlist(vec))<0, min(unlist(vec)), 0)) %>% 
+  mutate(fit = list(evir::gev(unlist(vec)-scale))) %>% 
+  #mutate(fit = list(MASS::fitdistr(unlist(vec), 'weibull'))) %>% 
+  #mutate(fit = purrr::map(vec, ~MASS::fitdistr(.x, 'weibull')))# %>% 
+  # mutate(shape=fit[[1]]$estimate[1],
+  #        scale=fit[[1]]$estimate[2],
+  #        shape_sd=fit[[1]]$sd[1],
+  #        scale_sd=fit[[1]]$sd[2])
+  mutate(xi=fit[[1]]$par.ests[1],
+         sigma=fit[[1]]$par.ests[2],
+         mu=fit[[1]]$par.ests[3],
+         xi_sd=fit[[1]]$par.ses[1],
+         sigma_sd=fit[[1]]$par.ses[2],
+         mu_sd=fit[[1]]$par.ses[3],
+         converged=fit[[1]]$converged)
+
 gamma <- MASS::fitdistr(foo$Price, 'gamma')
+  
+foo3 <- dweibull(foo$Price, weibull$estimate[1], weibull$estimate[2])
+foo %>% 
+  filter(Price<1000) %>% 
+  ggplot(aes(x=Price)) +
+  geom_histogram() +
+  geom_line(aes(y=dweibull(foo$Price, weibull$estimate[1], weibull$estimate[2])))
   
 hist(foo$Price, breaks = 25, probability = TRUE, main = "Histogram vs Fitted Curve Weibull Data")
 curve(dweibull(x, weibull$estimate[1], weibull$estimate[2]), col="red", lwd=2, add = T)
@@ -74,17 +140,6 @@ df_Hourly %>%
        x="Hour of Day",
        y="Dollars per mWh")
 
-df %>% 
-  ggplot(aes(x=Hour, y=Price)) +
-  geom_point()+
-  facet_wrap(vars(Month))+
-  scale_y_continuous(labels=scales::dollar_format())+
-  scale_x_discrete(breaks=c("00:00", "04:00", "08:00", "12:00",
-                            "16:00", "20:00", "24:00")) +
-  labs(title="ERCoT Price Data at Houston Hub",
-       subtitle="2021 and 2022",
-       x="Hour of Day",
-       y="Dollars per mWh")
 
 ```
 
