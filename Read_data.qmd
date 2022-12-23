@@ -50,25 +50,65 @@ Home <- df
 
 ```{r ercot}
 
-df <- readxl::read_excel(paste0(path, "Ercot_2021.xlsx"))
+#   each month is a separate tab
 
-df <- df %>% 
-  rbind(readxl::read_excel(paste0(path, "Ercot_2022.xlsx")))
+#       first we do 2022
+sheets <- paste0(path, "Ercot_2022.xlsx") %>% 
+  readxl::excel_sheets() %>% 
+  set_names()
+  
+df <- map_df(sheets,
+              ~ readxl::read_excel(path=paste0(path, "Ercot_2022.xlsx"),
+                                   sheet = .x), .id = "sheet")
 
-#   Look only at Houston Hub data and convert to actual time-date data
+#       now we do 2021-2014
+
+for (i in 14:21){
+  in_file <- paste0("Ercot_20", i, ".xlsx")
+  print(paste("---", i, in_file))
+  sheets <- paste0(path, in_file) %>% # get names of sheets
+    readxl::excel_sheets() %>% 
+    set_names()
+  
+  df <- df %>% 
+    rbind(map_df(sheets,
+                ~ readxl::read_excel(path=paste0(path, in_file),
+                                     sheet = .x), .id = "sheet"))
+}
+
+#   Look only at Houston Hub and Load Zone data and convert to actual time-date data
 
 df2 <- df %>% 
-  filter(`Settlement Point Name`=="HB_HOUSTON") %>% 
+  filter(stringr::str_detect(`Settlement Point Name`, "HOUSTON")) %>% 
   select(Date=`Delivery Date`,
          Hour=`Delivery Hour`,
          Interval=`Delivery Interval`,
-         Price=`Settlement Point Price`)
+         Price=`Settlement Point Price`,
+         Name=`Settlement Point Name`)
+
+#   What are LZ and LZEW load zones for Houston? No f(*&ing idea.
+
+foo <- df2 %>% 
+  mutate(Date=lubridate::mdy_hm(paste(Date,
+                                      as.character(Hour),
+                                      as.character((Interval-1)*15)))) %>% 
+  pivot_wider(Date, names_from = "Name", values_from = "Price") %>% 
+  rowwise() %>% 
+  mutate(LZ1=unlist(LZ_HOUSTON)[1], LZ2=unlist(LZ_HOUSTON)[2], HUB=HB_HOUSTON[[1]]) %>% 
+  mutate(DeltaLZ=LZ1-LZ2, Delta_Hub=LZ1-HUB)
+
+#   Don't know the difference between LZ and LZEW load zones, so I will 
+#   average them since the differences are usually quite small
 
 df <- df2 %>% 
   mutate(Date=lubridate::mdy_hm(paste(Date,
                                       as.character(Hour),
                                       as.character((Interval-1)*15)))) %>% 
-  select(Date, Price)
+  pivot_wider(Date, names_from = "Name", values_from = "Price") %>% 
+  rowwise() %>% 
+  mutate(LZ1=unlist(LZ_HOUSTON)[1], LZ2=unlist(LZ_HOUSTON)[2], HUB=HB_HOUSTON[[1]]) %>% 
+  mutate(Hub_price=HUB, LZ_price=mean(LZ1, LZ2)) %>% 
+  select(Date, Hub_price, LZ_price)
 
 Ercot <- df
 
