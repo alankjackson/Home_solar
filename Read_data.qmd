@@ -110,7 +110,9 @@ df <- df2 %>%
   mutate(Hub_price=HUB, LZ_price=mean(LZ1, LZ2)) %>% 
   select(Date, Hub_price, LZ_price)
 
-Ercot <- df
+#   Don't know why this helps, but it helps immensely
+
+Ercot <- df %>% as_tibble()
 
 ```
 
