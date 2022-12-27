@@ -26,63 +26,80 @@ Let's look at the data to get a feel for what is going on
 
 ```{r initial look}
 
-df <- df %>% 
+df <- df %>% as_tibble() %>% 
+  mutate(Hour=lubridate::hour(Date)) %>%
   #   Create nice x-axis labels
-  mutate(Time=paste0(stringr::str_pad(lubridate::hour(Date),2,"left","0"), ":" ,
-                     stringr::str_pad(lubridate::minute(Date), 2, "left", "0"))) %>% 
-  mutate(Month=lubridate::month(Date, label=TRUE)) %>% 
+  mutate(Time=paste0(stringr::str_pad(Hour,2,"left","0"), ":" ,
+                     stringr::str_pad(lubridate::minute(Date), 2, "left", "0"))) %>%
+  mutate(Month=lubridate::month(Date, label=TRUE)) %>%
   #   Allow for some consolidation
-  mutate(Year=lubridate::year(Date))  %>% 
-  mutate(Day_time=paste0(stringr::str_pad(lubridate::day(Date),2,"left","0"), ":",
-                         stringr::str_pad(lubridate::hour(Date),2,"left","0"), ":" ,
-                         stringr::str_pad(lubridate::minute(Date), 2, "left", "0")
-         )) %>% 
-  mutate(Hour=lubridate::hour(Date))  
+  mutate(Year=lubridate::year(Date))  %>%
+  mutate(Day_time=paste0(stringr::str_pad(lubridate::day(Date),2,"left","0"),
+                         ":", Time))
 
 #   quick look
 
 df %>% 
-  ggplot(aes(x=Day, y=Price)) +
+  ggplot(aes(x=Day_time, y=LZ_price)) +
   geom_point()+
   facet_wrap(vars(Month))+
   scale_y_continuous(labels=scales::dollar_format())+
   scale_x_discrete(breaks=c("00:00", "04:00", "08:00", "12:00",
                             "16:00", "20:00", "24:00")) +
-  labs(title="ERCoT Price Data at Houston Hub",
-       subtitle="2021 and 2022",
-       x="Hour of Day",
+  labs(title="ERCOT Price Data at Houston Load Zone",
+       subtitle="2014 to 2022",
+       x="Day of Month",
        y="Dollars per mWh")
 
 #   Let's look at the extreme values in greater detail
 
 df %>% 
-  ggplot(aes(x=Price)) +
+  filter(LZ_price>0) %>% 
+  ggplot(aes(x=LZ_price)) +
   geom_histogram() +
   facet_wrap(vars(Month), scales="free_x")+
-  scale_x_continuous(labels=scales::dollar_format())+
-  labs(title="ERCoT Price Data at Houston Hub",
-       subtitle="2021 and 2022",
+  scale_x_log10(labels=scales::dollar_format()) +
+  #scale_x_continuous(labels=scales::dollar_format())+
+  labs(title="ERCOT Price Data at Houston Load Zone - Log Scaling",
+       subtitle="2014 to 2022",
        x="Dollars per mWh")
-
-#   Look at data with price >$100
 
 df %>% 
   filter(Year>2021) %>% 
-  ggplot(aes(y=Price, x=Date)) +
+  ggplot(aes(y=LZ_price, x=Date)) +
   geom_line() +
+  scale_y_continuous(labels=scales::dollar_format())+
   facet_wrap(vars(lubridate::month(Date)), ncol=1, scales="free")+
-  labs(title="ERCoT Price Data at Houston Hub",
-       subtitle="2022",
-       x="Dollars per mWh")
+  labs(title="ERCoT Price Data at Houston Zone",
+       subtitle="2022 (Note that vertical scales vary with row)",
+       x="Date",
+       y="Dollars per mWh")
 
-df %>% 
-  filter(Year==2021) %>% 
-  ggplot(aes(y=Price, x=Date)) +
-  geom_line() +
-  facet_wrap(vars(lubridate::month(Date)), ncol=1, scales="free")+
-  labs(title="ERCoT Price Data at Houston Hub",
-       subtitle="2021",
-       x="Dollars per mWh")
+winsor <-  function (x, multiple=3) {
+   if(length(multiple) != 1 || multiple <= 0) {
+      stop("bad value for 'multiple'")
+   }
+   med <- median(x)
+   y <- x - med
+   sc <- mad(y, center=0) * multiple
+   y[ y > sc ] <- sc
+   y[ y < -sc ] <- -sc
+   return(y + med)
+}
+
+cbind(orig=df$LZ_price, new=winsor(df$LZ_price)) %>% 
+  as_tibble() %>% 
+  ggplot(aes(x=orig, y=new))+
+  geom_point()
+
+# df %>% 
+#   filter(Year==2021) %>% 
+#   ggplot(aes(y=LZ_price, x=Date)) +
+#   geom_line() +
+#   facet_wrap(vars(lubridate::month(Date)), ncol=1, scales="free")+
+#   labs(title="ERCoT Price Data at Houston Hub",
+#        subtitle="2021",
+#        x="Dollars per mWh")
 
 
 
@@ -93,90 +110,276 @@ df %>%
 
 ```
 
-##  Plot the data
+##  Fit the data
 
-```{r initial plots}
+```{r fitting}
 
-df <- df %>% 
-  #   Create nice x-axis labels
-  mutate(Time=paste0(stringr::str_pad(lubridate::hour(Date),2,"left","0"), ":" ,
-                     stringr::str_pad(lubridate::minute(Date), 2, "left", "0"))) %>% 
-  mutate(Month=lubridate::month(Date, label=TRUE)) %>% 
-  mutate(Hour=lubridate::hour(Date)) %>% 
+foo <- df %>% 
   #   Eliminate the Valentine's freeze data
   filter(Date<lubridate::ymd("2021-02-14") | 
          Date>lubridate::ymd("2021-02-20"))
 
-foo <- df %>% 
-  mutate(Price=Price+40) %>% # offset to get rid of negative numbers
+foo <- foo %>% 
+  mutate(LZ_price=LZ_price+70) %>% # offset to get rid of negative numbers
   mutate(week=lubridate::week(Date)) %>% 
   filter(week<53)
 
-weibull <- foo %>% 
-  group_by(Hour, week) %>% 
-     summarize(vec = list(Price)) %>% 
-  group_by(Hour, week) %>% 
-  mutate(scale=if_else(min(unlist(vec))<0, min(unlist(vec)), 0)) %>% 
-  mutate(fit = list(evir::gev(unlist(vec)-scale))) %>% 
-  #mutate(fit = list(MASS::fitdistr(unlist(vec), 'weibull'))) %>% 
-  #mutate(fit = purrr::map(vec, ~MASS::fitdistr(.x, 'weibull')))# %>% 
-  # mutate(shape=fit[[1]]$estimate[1],
-  #        scale=fit[[1]]$estimate[2],
-  #        shape_sd=fit[[1]]$sd[1],
-  #        scale_sd=fit[[1]]$sd[2])
-  mutate(xi=fit[[1]]$par.ests[1],
-         sigma=fit[[1]]$par.ests[2],
-         mu=fit[[1]]$par.ests[3],
-         xi_sd=fit[[1]]$par.ses[1],
-         sigma_sd=fit[[1]]$par.ses[2],
-         mu_sd=fit[[1]]$par.ses[3],
-         converged=fit[[1]]$converged)
+#   Calculate a few gaussian stats on Winsorized data
 
-gamma <- MASS::fitdistr(foo$Price, 'gamma')
-  
-foo3 <- dweibull(foo$Price, weibull$estimate[1], weibull$estimate[2])
+#   Weekly stats
 foo %>% 
-  filter(Price<1000) %>% 
-  ggplot(aes(x=Price)) +
-  geom_histogram() +
-  geom_line(aes(y=dweibull(foo$Price, weibull$estimate[1], weibull$estimate[2])))
+  mutate(LZ_price=LZ_price-70) %>% 
+  group_by(week) %>% 
+    mutate(winsor=winsor(LZ_price)) %>% 
+    summarize(mean=mean(winsor), med=median(winsor), sd=sd(winsor)) %>% 
+  select(week, mean, med, sd) %>% 
+  pivot_longer(!week, names_to = "Statistic", values_to = "Value") %>% 
+  ggplot(aes(x=Value)) +
+  geom_histogram(aes(y=..density..),  
+                 #binwidth=.5,
+                 colour="black", 
+                 fill="white", 
+                 bins = 15)+
+  geom_density(alpha=.2, fill="#FF6666")+  # Overlay with transparent density plot
+  scale_x_continuous(labels=scales::dollar_format())+
+  facet_wrap(vars(Statistic), scales="free")+
+  labs(title="ERCOT Houston Load Zone Weekly Statistics",
+       subtitle="2014-2022, Winsorized data",
+       x="Dollars per mWh")
+
+foo %>% 
+  mutate(LZ_price=LZ_price-70) %>% 
+  group_by(week) %>% 
+    mutate(winsor=winsor(LZ_price)) %>% 
+    summarize(mean=mean(winsor), med=median(winsor), sd=sd(winsor)) %>% 
+  select(week, mean, med, sd) %>% 
+  pivot_longer(!week, names_to = "Statistic", values_to = "Value") %>% 
+  ggplot(aes(x=week, y=Value, color=Statistic, group=Statistic )) +
+  geom_point()+
+  geom_line()+
+  scale_y_continuous(labels=scales::dollar_format())+
+  labs(title="Weekly Houston Load Zone Price Data Winsorized Statistics by Week",
+       subtitle="2014-2922",
+       x="Week of Year",
+       y="Price in Dollars per mWh")
+
+#   Hourly stats
+foo %>% 
+  mutate(LZ_price=LZ_price-70) %>% 
+  group_by(Hour) %>% 
+    mutate(winsor=winsor(LZ_price)) %>% 
+    summarize(mean=mean(winsor), med=median(winsor), sd=sd(winsor)) %>% 
+  select(Hour, mean, med, sd) %>% 
+  pivot_longer(!Hour, names_to = "Statistic", values_to = "Value") %>% 
+  ggplot(aes(x=Value)) +
+  geom_histogram(aes(y=..density..),  
+                 #binwidth=.5,
+                 colour="black", 
+                 fill="white", 
+                 bins = 15)+
+  geom_density(alpha=.2, fill="#FF6666")+  # Overlay with transparent density plot
+  scale_x_continuous(labels=scales::dollar_format())+
+  facet_wrap(vars(Statistic), scales="free")+
+  labs(title="ERCOT Houston Load Zone Hourly Statistics",
+       subtitle="2014-2022, Winsorized data",
+       x="Dollars per mWh")
+
+#   Average Hourly price
+
+foo %>% 
+  mutate(LZ_price=LZ_price-70) %>% 
+  group_by(Hour) %>% 
+    mutate(winsor=winsor(LZ_price)) %>% 
+    summarize(mean=mean(winsor), med=median(winsor), sd=sd(winsor)) %>% 
+  select(Hour, mean, med, sd) %>% 
+  pivot_longer(!Hour, names_to = "Statistic", values_to = "Value") %>% 
+  ggplot(aes(x=Hour, y=Value, color=Statistic, group=Statistic )) +
+  geom_point()+
+  geom_line()+
+  scale_y_continuous(labels=scales::dollar_format())+
+  labs(title="Hourly Houston Load Zone Price Data Winsorized Statistics by Time of Day",
+       subtitle="2014-2922",
+       x="Hour of Day",
+       y="Price in Dollars per mWh")
+
+#####   Let's do some more fitting
+
+#   Fit Cauchy to data at 16:00 in August to start
+
+Cauchy <- foo %>% 
+  filter(Hour==16) %>%
+  filter(Month=="Aug") %>% 
+  summarize(vec=list(LZ_price)) %>% 
+  mutate(fit = list(MASS::fitdistr(unlist(vec), 'cauchy'))) %>% 
+  mutate(location=fit[[1]]$estimate[1],
+         scale=fit[[1]]$estimate[2],
+         location_sd=fit[[1]]$sd[1],
+         scale_sd=fit[[1]]$sd[2])
+ 
+#   histogram and PDF
+Cauchy %>% ungroup() %>%
+  unnest(vec) %>%
+  ggplot(aes(x=vec))+
+  geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
+                   binwidth=.5,
+                   colour="black", fill="white") +
+  stat_function(fun = dcauchy, args = list(location = 111.65, scale = 17.7), color="red")
+
+#   Compare CDF's
+as_tibble(x=seq(0,9000,100)) %>%
+  ggplot(aes(x=value)) +
+  stat_function(fun=pcauchy, args=list(location = 111.65, scale = 217.7))+
+  stat_ecdf(data=foo %>% filter(Hour==16) %>% filter(Month=="Aug"), 
+            aes(x=LZ_price), color="red")
+#######################################################################
+####   Let's try scaling prices and then fitting
+
+foo16 <- foo %>%  filter(Hour==16) %>% filter(Month=="Aug")
+Min_price <- min(foo16$LZ_price,0)
+Max_price <- max(foo16$LZ_price)+1-Min_price
+
+foo16 <- foo16 %>% 
+  mutate(Price=1/((LZ_price+1-Min_price)/Max_price))
+# Kernel density estimate
+# Extend range of density estimate beyond data
+e = 0.1 * diff(range(foo16$Price))
+dens = density(foo16$Price, adjust=0.4, n=2056,
+               from=min(foo16$Price)-e, 
+               to=max(foo16$Price) +e)
+dens = data.frame(x=dens$x, y=dens$y)
   
-hist(foo$Price, breaks = 25, probability = TRUE, main = "Histogram vs Fitted Curve Weibull Data")
-curve(dweibull(x, weibull$estimate[1], weibull$estimate[2]), col="red", lwd=2, add = T)
+foo16 %>% ggplot(aes(x=Price))+
+  geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
+                   binwidth=2,
+                   colour="black", fill="white") +
+  geom_line(data=dens, aes(x=x, y=y))
 
-hist(foo$Price, breaks = 25, probability = TRUE, main = "Histogram vs Fitted Curve Gamma Data")
-curve(dweibull(x, gamma$estimate[1], gamma$estimate[2]), col="red", lwd=2, add = T)
+dens <- dens %>% 
+  mutate(Price=(1/x)*Max_price-1+Min_price) %>% 
+  filter(x>0) %>% 
+  filter(Price<max(foo16$LZ_price)+1)
 
-df_Gamma <- df %>% 
-  mutate(Price=Price+100) %>% # offset to get rid of negative numbers
-  group_by(Hour) %>% 
-    summarize(params = as.numeric(MASS::fitdistr(Price, 'gamma')$estimate),
-              stderrs = as.numeric(MASS::fitdistr(Price, 'gamma')$sd))
+# area <- DescTools::AUC(dens$x, dens$y)
 
 
-df_Hourly <- df %>% 
-  group_by(Hour) %>% 
-     summarise(Mean_price=mean(Price, na.rm=TRUE),
-               Median_price=median(Price)+Mean_price, 
-               Std_dev=sd(Price)+Mean_price) %>% 
-  mutate(Twosigma=2*Std_dev) %>% 
+dens %>% 
+  ggplot(aes(x=Price, y=y))+
+  geom_line()
+
+foo16 %>% 
+  ggplot(aes(x=LZ_price))+
+  geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
+                   binwidth=4,
+                   colour="black", fill="white") +
+  geom_line(data=dens, aes(x=Price, y=y), color="red")
+  
+
+##########################################################################
+
+Cauchy <- foo16 %>% 
+  summarize(vec=list(Price)) %>% 
+  mutate(fit = list(MASS::fitdistr(unlist(vec), 'cauchy'))) %>% 
+  mutate(location=fit[[1]]$estimate[1],
+         scale=fit[[1]]$estimate[2],
+         location_sd=fit[[1]]$sd[1],
+         scale_sd=fit[[1]]$sd[2])
+ 
+#   histogram and PDF
+Cauchy %>% ungroup() %>%
+  unnest(vec) %>%
+  ggplot(aes(x=vec))+
+  geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
+                   binwidth=.01,
+                   colour="black", fill="white") +
+  stat_function(fun = dcauchy, args = list(location = 5.3, scale = 0.0881), color="red")
+
+#   Compare CDF's
+as_tibble(x=log(seq(1,9000,100))) %>%
+  ggplot(aes(x=value)) +
+  stat_function(fun=pcauchy, args=list(location = 5.3, scale = 0.0881))+
+  stat_ecdf(data=foo16 %>% filter(Hour==16) %>% filter(Month=="Aug"), 
+            aes(x=Price), color="red")
+
+
+#   The defined distributions kinda suck, so let's try empirical distributions
+foo_sub <- foo %>% filter(Hour==16) %>% filter(Month=="Aug") %>% 
+  mutate(LZ_price=LZ_price - 70)
+
+Quartiles <- EnvStats::qemp(p=seq(0,1,len=10000), obs=foo_sub$LZ_price)
+Emp <- EnvStats::demp(x=Quartiles, obs=foo_sub$LZ_price)
+
+as_tibble(cbind(Price=Quartiles, Density=Emp)) %>% 
+  ggplot(aes(y=Density, x=Price)) +
+  geom_histogram(data=foo_sub, aes(y=after_stat(density), x=LZ_price), binwidth=10)+
+  geom_line(color="red")
+  
+
+
+
+
+df_Hourly <- df %>%
+  group_by(Hour) %>%
+     summarise(Mean_price=mean(LZ_price, na.rm=TRUE),
+               Median_price=median(LZ_price)+Mean_price,
+               Std_dev=sd(LZ_price)+Mean_price) %>%
+  mutate(Twosigma=2*Std_dev) %>%
   pivot_longer(!Hour, names_to="Statistic", values_to="Statistics")
 
-df_Hourly %>% 
+df_sumHour <- df %>% 
+  mutate(Hourd=paste0(stringr::str_pad(Hour,2,"left","0"), ":00")) %>% 
+  mutate(Statistic=NA, Statistics=LZ_price) 
+
+df_Hourly %>%
+  mutate(Hour=paste0(stringr::str_pad(Hour,2,"left","0"), ":00")) %>% 
   ggplot(aes(x=Hour, y=Statistics, group=Statistic, color=Statistic)) +
   scale_x_discrete(breaks=c("00:00", "04:00", "08:00", "12:00",
-                            "16:00", "20:00", "24:00")) +
-  geom_point(data=df %>% mutate(Statistics=Price, Statistic=NA), aes(x=Hour, y=Statistics))+
+                            "16:00", "20:00", "24:00"))+ 
+  geom_point(data=df_sumHour, aes(x=Hourd, y=Statistics))+
   geom_line()+
-  #geom_point(aes(x=Hour, y=Median_price), color="light blue") +
-  #geom_point(aes(x=Hour, y=Std_dev), color="green") +
-  #geom_point(aes(x=Hour, y=Twosigma), color="red") +
   scale_y_continuous(labels=scales::dollar_format(), limits = c(-100, 6000))+
-  labs(title="ERCoT Price Data at Houston Hub",
-       subtitle="2021 and 2022",
+  labs(title="ERCoT Price Data at Houston Load Zone",
+       subtitle="2014 to 2022",
        x="Hour of Day",
        y="Dollars per mWh")
 
 
 ```
+
+
+#       Simulations
+
+Look for probability of price in various intervals at 90% and 99% level.
+
+```{r simulation}
+
+sim <-  EnvStats::remp(1000, obs=foo_sub$LZ_price) %>% 
+         sort()  
+
+Raw_cdf <- as_tibble(cbind(Probability=seq(0.001,1,0.001), Price= sim ))
+
+fit <- loess(Probability ~ Price, data=Raw_cdf)
+Smooth_cdf <- as_tibble(cbind(Probability=predict(fit), Price=seq(1,9000,length.out=1000)))
+
+#   Cumulative probability
+Raw_cdf %>% 
+  ggplot(aes(y=Probability, x=Price)) +
+  geom_line()+
+  geom_point()+
+  geom_smooth(method = "gam")
+  geom_line(data=Smooth_cdf, aes(x=Price, y=Probability), color="red")
+
+
+
+#as_tibble(cbind(Probability=seq(0.001,1,0.001), Price= sim ))  
+terp <-   approx(sim, seq(0.001,1,0.001), seq(1,9000,1))
+terp %>% as_tibble() %>% 
+  
+  rename(Cum_prob=y, Price=x) %>% 
+  mutate(Prob=Cum_prob - lag(Cum_prob)) %>% 
+  ggplot(aes(x=Price, y=Prob)) +
+  geom_line()
+
+```
+
+
 
