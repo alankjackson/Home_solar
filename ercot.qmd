@@ -113,7 +113,6 @@ cbind(orig=df$LZ_price, new=winsor(df$LZ_price)) %>%
 ##  Fit the data
 
 ```{r fitting}
-
 foo <- df %>% 
   #   Eliminate the Valentine's freeze data
   filter(Date<lubridate::ymd("2021-02-14") | 
@@ -201,7 +200,10 @@ foo %>%
        subtitle="2014-2922",
        x="Hour of Day",
        y="Price in Dollars per mWh")
+```
 
+
+```{r Cauchy fitting}
 #####   Let's do some more fitting
 
 #   Fit Cauchy to data at 16:00 in August to start
@@ -221,7 +223,7 @@ Cauchy %>% ungroup() %>%
   unnest(vec) %>%
   ggplot(aes(x=vec))+
   geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
-                   binwidth=.5,
+                   binwidth=25,
                    colour="black", fill="white") +
   stat_function(fun = dcauchy, args = list(location = 111.65, scale = 17.7), color="red")
 
@@ -231,74 +233,47 @@ as_tibble(x=seq(0,9000,100)) %>%
   stat_function(fun=pcauchy, args=list(location = 111.65, scale = 217.7))+
   stat_ecdf(data=foo %>% filter(Hour==16) %>% filter(Month=="Aug"), 
             aes(x=LZ_price), color="red")
-#######################################################################
-####   Let's try scaling prices and then fitting
+```
 
-foo16 <- foo %>%  filter(Hour==16) %>% filter(Month=="Aug")
-Min_price <- min(foo16$LZ_price,0)
-Max_price <- max(foo16$LZ_price)+1-Min_price
 
-foo16 <- foo16 %>% 
-  mutate(Price=1/((LZ_price+1-Min_price)/Max_price))
+```{r non-parametric fitting}
+
+foo16_a <- foo %>%  filter(Hour==16) %>% filter(Month=="Aug") 
+foo16_b <- foo %>%  filter(Hour==04) %>% filter(Month=="Aug")
+
 # Kernel density estimate
 # Extend range of density estimate beyond data
-e = 0.1 * diff(range(foo16$Price))
-dens = density(foo16$Price, adjust=0.4, n=2056,
-               from=min(foo16$Price)-e, 
-               to=max(foo16$Price) +e)
+# e = 0.1 * diff(range(foo16$Scaled_price))
+e=0
+
+dens = density(foo16_a$LZ_price, adjust=1, n=2056,
+               from=min(foo16_a$LZ_price)-e, 
+               to=max(foo16_a$LZ_price) +e)
 dens = data.frame(x=dens$x, y=dens$y)
   
-foo16 %>% ggplot(aes(x=Price))+
+foo16_a %>% ggplot(aes(x=LZ_price))+
   geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
-                   binwidth=2,
+                   binwidth=50,
                    colour="black", fill="white") +
-  geom_line(data=dens, aes(x=x, y=y))
+  geom_density(color="blue", size=2, alpha=0.3)+
+  geom_line(data=dens, aes(x=x, y=y), color="red")+
+  labs(title="August at 4PM - highly asymmetric distribution")
 
-dens <- dens %>% 
-  mutate(Price=(1/x)*Max_price-1+Min_price) %>% 
-  filter(x>0) %>% 
-  filter(Price<max(foo16$LZ_price)+1)
-
-# area <- DescTools::AUC(dens$x, dens$y)
-
-
-dens %>% 
-  ggplot(aes(x=Price, y=y))+
-  geom_line()
-
-foo16 %>% 
-  ggplot(aes(x=LZ_price))+
-  geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
-                   binwidth=4,
-                   colour="black", fill="white") +
-  geom_line(data=dens, aes(x=Price, y=y), color="red")
+dens_b = density(foo16_b$LZ_price, adjust=1, n=2056,
+               from=min(foo16_b$LZ_price)-e, 
+               to=max(foo16_b$LZ_price) +e)
+dens_b = data.frame(x=dens_b$x, y=dens_b$y)
   
-
-##########################################################################
-
-Cauchy <- foo16 %>% 
-  summarize(vec=list(Price)) %>% 
-  mutate(fit = list(MASS::fitdistr(unlist(vec), 'cauchy'))) %>% 
-  mutate(location=fit[[1]]$estimate[1],
-         scale=fit[[1]]$estimate[2],
-         location_sd=fit[[1]]$sd[1],
-         scale_sd=fit[[1]]$sd[2])
- 
-#   histogram and PDF
-Cauchy %>% ungroup() %>%
-  unnest(vec) %>%
-  ggplot(aes(x=vec))+
+foo16_b %>% ggplot(aes(x=LZ_price))+
   geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
-                   binwidth=.01,
+                   bins=50,
                    colour="black", fill="white") +
-  stat_function(fun = dcauchy, args = list(location = 5.3, scale = 0.0881), color="red")
+  geom_density(color="blue", size=2)+
+  geom_line(data=dens_b, aes(x=x, y=y), color="red")+
+  labs(title="August at 4AM - highly symmetric distribution")
 
-#   Compare CDF's
-as_tibble(x=log(seq(1,9000,100))) %>%
-  ggplot(aes(x=value)) +
-  stat_function(fun=pcauchy, args=list(location = 5.3, scale = 0.0881))+
-  stat_ecdf(data=foo16 %>% filter(Hour==16) %>% filter(Month=="Aug"), 
-            aes(x=Price), color="red")
+
+
 
 
 #   The defined distributions kinda suck, so let's try empirical distributions
@@ -310,7 +285,7 @@ Emp <- EnvStats::demp(x=Quartiles, obs=foo_sub$LZ_price)
 
 as_tibble(cbind(Price=Quartiles, Density=Emp)) %>% 
   ggplot(aes(y=Density, x=Price)) +
-  geom_histogram(data=foo_sub, aes(y=after_stat(density), x=LZ_price), binwidth=10)+
+  geom_histogram(data=foo_sub, aes(y=after_stat(density), x=LZ_price), binwidth=50)+
   geom_line(color="red")
   
 
