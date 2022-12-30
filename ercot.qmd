@@ -235,62 +235,195 @@ as_tibble(x=seq(0,9000,100)) %>%
             aes(x=LZ_price), color="red")
 ```
 
+```{r functions}
+
+#   https://rdrr.io/github/sethmcg/climod/src/R/pdf2cdf.R
+pdf2cdf <- function(p, x=NULL, normalize=TRUE, expand=FALSE){
+    if(is.null(x)) {
+        if(is.atomic(p)){
+            y <- p
+            x <- seq(length(y))
+        } else {
+            stopifnot(exists("x", where=p) && exists("y", where=p))
+            y <- p$y
+            x <- p$x
+        }
+    } else {
+        stopifnot(is.atomic(p) && is.atomic(x))
+        y <- p
+    }
+    
+    stopifnot(length(x)==length(y))
+    stopifnot(length(x) > 2)
+    stopifnot(all(is.finite(x)))
+    stopifnot(all(is.finite(y)))
+    stopifnot(all(diff(x) > 0))
+
+    if(any(y < 0)){
+        y[y < 0] <- 0
+    }
+    
+    ## trapezoids: N = no., L = left height, R = right height, W = width
+    N <- length(y) + 1
+    L <- c(0,y)
+    R <- c(y,0)
+    W <- diff(x)
+    W <- c(W[1], W, W[N-2])
+    area <- W * (L + R) / 2
+    cdf <- cumsum(area)
+
+    if(normalize){
+        cdf <- cdf / cdf[N]
+    }
+    if(expand){
+        return(list(x=c(x[1]-W[1],x,x[N-1]+W[N]), y=c(0,cdf)))
+    } else {
+        return(list(x=x, y=cdf[-N]))
+    }
+}
+
+make_icdf <- function(foo, offset=70){
+  #   density 
+  denf = density(foo$LZ_price, adjust=1, n=4096)
+  #   Convert to CDF
+  cdf <- pdf2cdf(denf)
+  #   Build data frame
+  #dens = data.frame(x=denf$x, y=denf$y)
+  #   Build data frame
+  cdf <- data.frame(x=denf$x, y=cdf$y)
+  #   Spline fit function
+  q <- splinefun(cdf$y, cdf$x, method="monoH.FC")
+  #   Output points
+  probs <- seq(0,1,0.001)
+  #   Invert CDF
+  icdf <- as_tibble(cbind(Price=q(probs)-offset, Prob=probs))
+  return(icdf)
+}
+
+```
+
 
 ```{r non-parametric fitting}
 
-foo16_a <- foo %>%  filter(Hour==16) %>% filter(Month=="Aug") 
-foo16_b <- foo %>%  filter(Hour==04) %>% filter(Month=="Aug")
+#     Test the process on two end-members
 
+foo_a <- foo %>%  filter(Hour==16) %>% filter(Month=="Aug") 
+foo_b <- foo %>%  filter(Hour==04) %>% filter(Month=="Aug")
+
+offset <- 70
+
+######    4 PM
 # Kernel density estimate
-# Extend range of density estimate beyond data
-# e = 0.1 * diff(range(foo16$Scaled_price))
-e=0
 
-dens = density(foo16_a$LZ_price, adjust=1, n=2056,
-               from=min(foo16_a$LZ_price)-e, 
-               to=max(foo16_a$LZ_price) +e)
-dens = data.frame(x=dens$x, y=dens$y)
+#     Sensitivity of fit to different parameters
+dens <- NULL
+for (adjust in seq(0.3,2,0.1)) {
+  denf_a = density(foo_a$LZ_price, adjust=adjust, n=4096)
+  dens = rbind(dens, data.frame(x=denf_a$x, y=denf_a$y, adjust=adjust))
+}
   
-foo16_a %>% ggplot(aes(x=LZ_price))+
+  foo_a %>% ggplot(aes(x=LZ_price))+
   geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
-                   binwidth=50,
+                   binwidth=2,
                    colour="black", fill="white") +
-  geom_density(color="blue", size=2, alpha=0.3)+
-  geom_line(data=dens, aes(x=x, y=y), color="red")+
-  labs(title="August at 4PM - highly asymmetric distribution")
+  geom_line(data=dens, aes(x=x, y=y, color=factor(adjust), group=adjust))+
+  xlim(0,200)+
+  labs(title="August at 4PM - asymmetric dist",
+       subtitle="Density Histogram and Fit")
 
-dens_b = density(foo16_b$LZ_price, adjust=1, n=2056,
-               from=min(foo16_b$LZ_price)-e, 
-               to=max(foo16_b$LZ_price) +e)
-dens_b = data.frame(x=dens_b$x, y=dens_b$y)
+dens <- NULL
+for (n in seq(512,20000,512)) {
+  denf_a = density(foo_a$LZ_price, adjust=1, n=n)
+  dens = rbind(dens, data.frame(x=denf_a$x, y=denf_a$y, n=n))
+}
   
-foo16_b %>% ggplot(aes(x=LZ_price))+
+  foo_a %>% ggplot(aes(x=LZ_price))+
   geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
-                   bins=50,
+                   binwidth=2,
+                   colour="black", fill="white") +
+  geom_line(data=dens, aes(x=x, y=y, color=factor(n), group=n))+
+  xlim(0,200)+
+  labs(title="August at 4PM - asymmetric dist",
+       subtitle="Density Histogram and Fit")  
+###########################################################
+
+denf_a = density(foo_a$LZ_price, adjust=1, n=4096)
+
+cdf <- pdf2cdf(denf_a)
+dens_a = data.frame(x=denf_a$x, y=denf_a$y)
+cdf <- data.frame(x=denf_a$x, y=cdf$y)
+q <- splinefun(cdf$y, cdf$x, method="monoH.FC")
+probs <- seq(0,1,0.001)
+icdf <- as_tibble(cbind(Price=q(probs)-offset, Prob=probs))
+
+p1 <- icdf %>% 
+  ggplot(aes(x=Price, y=Prob))+
+  geom_line()+
+  geom_line(data=dens_a, aes(x=x-offset, y=y), color="red")+
+  labs(title="CDF and Density",
+       subtitle="4 PM asymmetric dist")
+  
+p2 <- foo_a %>% ggplot(aes(x=LZ_price-offset))+
+  geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
+                   binwidth=5,
                    colour="black", fill="white") +
   geom_density(color="blue", size=2)+
-  geom_line(data=dens_b, aes(x=x, y=y), color="red")+
-  labs(title="August at 4AM - highly symmetric distribution")
+  geom_line(data=dens_a, aes(x=x-offset, y=y), color="red")+
+  labs(title="August at 4PM - asymmetric dist",
+       subtitle="Density Histogram and Fit")
 
+p3 <- as_tibble(sample(icdf$Price, size=1000, replace=TRUE)) %>% 
+  rename(Price=value) %>% 
+  ggplot()+
+  geom_histogram(aes(x=Price, y=..density..),
+                   binwidth=5,
+                   colour="black", fill="white") +
+  geom_line(data=dens_a, aes(x=x-offset, y=y), color="red")+
+  labs(title="August at 4PM - asymmetric dist",
+       subtitle="Histogram of inverse cdf and Density fit")
 
+p1 + p2 + p3 + patchwork::plot_layout(ncol=3)
 
+######    4 AM
+########################
+denf_b = density(foo_b$LZ_price, adjust=1, n=4096)
 
+cdf <- pdf2cdf(denf_b)
+dens_b = data.frame(x=denf_b$x, y=denf_b$y)
+cdf <- data.frame(x=denf_b$x, y=cdf$y)
+q <- splinefun(cdf$y, cdf$x, method="monoH.FC")
+probs <- seq(0,1,0.001)
+icdf <- as_tibble(cbind(Price=q(probs)-offset, Prob=probs))
 
-#   The defined distributions kinda suck, so let's try empirical distributions
-foo_sub <- foo %>% filter(Hour==16) %>% filter(Month=="Aug") %>% 
-  mutate(LZ_price=LZ_price - 70)
-
-Quartiles <- EnvStats::qemp(p=seq(0,1,len=10000), obs=foo_sub$LZ_price)
-Emp <- EnvStats::demp(x=Quartiles, obs=foo_sub$LZ_price)
-
-as_tibble(cbind(Price=Quartiles, Density=Emp)) %>% 
-  ggplot(aes(y=Density, x=Price)) +
-  geom_histogram(data=foo_sub, aes(y=after_stat(density), x=LZ_price), binwidth=50)+
-  geom_line(color="red")
+p1 <- icdf %>% 
+  ggplot(aes(x=Price, y=Prob))+
+  geom_line()+
+  geom_line(data=dens_b, aes(x=x-offset, y=y), color="red")+
+  labs(title="CDF and Density",
+       subtitle="4 AM symmetric dist")
   
+p2 <- foo_b %>% ggplot(aes(x=LZ_price-offset))+
+  geom_histogram(aes(y=..density..),# Histogram with density instead of count on y-axis
+                   binwidth=5,
+                   colour="black", fill="white") +
+  geom_density(color="blue", size=2)+
+  geom_line(data=dens_b, aes(x=x-offset, y=y), color="red")+
+  labs(title="August at 4AM - symmetric dist",
+       subtitle="Density Histogram and Fit")
 
+p3 <- as_tibble(sample(icdf$Price, size=1000, replace=TRUE)) %>% 
+  rename(Price=value) %>% 
+  ggplot()+
+  geom_histogram(aes(x=Price, y=..density..),
+                   binwidth=5,
+                   colour="black", fill="white") +
+  geom_line(data=dens_b, aes(x=x-offset, y=y), color="red")+
+  labs(title="August at 4AM - symmetric dist",
+       subtitle="Histogram of inverse cdf and Density fit")
 
+p1 + p2 + p3 + patchwork::plot_layout(ncol=3)
 
+#   Hourly stats
 
 df_Hourly <- df %>%
   group_by(Hour) %>%
@@ -321,40 +454,27 @@ df_Hourly %>%
 ```
 
 
-#       Simulations
+#   Build all distributions
 
-Look for probability of price in various intervals at 90% and 99% level.
+Build distributions by hour and by month
 
-```{r simulation}
+```{r build all}
 
-sim <-  EnvStats::remp(1000, obs=foo_sub$LZ_price) %>% 
-         sort()  
+output <- NULL
+for (month in month.abb){
+  for (hour in 0:23){
+    print(paste(month, hour))
+    foobar <- foo %>% filter(Hour==hour) %>% filter(Month==month)
+    icdf <- make_icdf(foobar, offset=70)
+    icdf <- icdf %>% mutate(Month=month, Hour=hour)
+    output <- rbind(output, icdf)
+  }
+}
 
-Raw_cdf <- as_tibble(cbind(Probability=seq(0.001,1,0.001), Price= sim ))
-
-fit <- loess(Probability ~ Price, data=Raw_cdf)
-Smooth_cdf <- as_tibble(cbind(Probability=predict(fit), Price=seq(1,9000,length.out=1000)))
-
-#   Cumulative probability
-Raw_cdf %>% 
-  ggplot(aes(y=Probability, x=Price)) +
-  geom_line()+
-  geom_point()+
-  geom_smooth(method = "gam")
-  geom_line(data=Smooth_cdf, aes(x=Price, y=Probability), color="red")
-
-
-
-#as_tibble(cbind(Probability=seq(0.001,1,0.001), Price= sim ))  
-terp <-   approx(sim, seq(0.001,1,0.001), seq(1,9000,1))
-terp %>% as_tibble() %>% 
-  
-  rename(Cum_prob=y, Price=x) %>% 
-  mutate(Prob=Cum_prob - lag(Cum_prob)) %>% 
-  ggplot(aes(x=Price, y=Prob)) +
-  geom_line()
+saveRDS(output, paste0(path, "ICDF_Month_Hour.rds"))
 
 ```
+
 
 
 
