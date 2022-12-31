@@ -1,0 +1,254 @@
+---
+title: "Smart Meter analysis"
+author: "Alan Jackson"
+format: html
+editor: visual
+---
+
+## Smart meter analysis
+
+Look at the smart meter data
+
+```{r initialize}
+
+library(tidyverse)
+
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+df <- readRDS(paste0(path, "Smart.rds"))
+Vaca <- readRDS(paste0(path, "Vacation.rds"))
+Weather <- readRDS(paste0(path, "Weather.rds")) %>% 
+  filter(Date>lubridate::mdy("1/1/2021"))
+
+
+df <- df %>% filter(!is.na(Usage))
+
+```
+
+##      Let's look at surplus generation statistics
+
+```{r surplus}
+
+daily <- df %>% 
+  mutate(Generated=if_else(Usage<0, -1*Usage, 0)) %>% 
+  group_by(lubridate::floor_date(Date, unit="day")) %>% 
+    #summarize(sum(min(0, Usage))) %>% # Only sum up negative values
+    summarize(sum(Generated)) %>% # Only sum up negative values
+  rename(Date=1, Generation=2) #%>% 
+  # mutate(Generation=Generation*-1) %>% 
+daily %>% 
+  ggplot(aes(x=Generation)) +
+  geom_histogram(binwidth=0.5)+
+  labs(title="Excess daily power sent to grid",
+       subtitle="2021-2022",
+       x="kWh sent to grid",
+       y="Count")
+
+df %>% 
+  mutate(Generated=if_else(Usage<0, -1*Usage, 0)) %>% 
+  group_by(lubridate::floor_date(Date, unit="day")) %>% 
+    # summarize(sum(min(0, Usage))) %>% # Only sum up negative values
+    summarize(sum(Generated)) %>% # Only sum up negative values
+  rename(Date=1, Generation=2) %>% 
+  # mutate(Generation=Generation*-1) %>% 
+  ggplot(aes(x=Date, y=Generation)) +
+  geom_point()+
+  geom_line()+
+  labs(title="Excess daily power sent to grid",
+       subtitle="2021-2022",
+       y="kWh sent to grid",
+       x="Date")
+
+df %>% 
+  mutate(Generated=if_else(Usage<0, -1*Usage, 0)) %>% 
+  group_by(lubridate::floor_date(Date, unit="month")) %>% 
+    # summarize(sum(min(0, Usage))) %>% # Only sum up negative values
+    summarize(sum(Generated)) %>% # Only sum up negative values
+  rename(Date=1, Generation=2) %>% 
+  # mutate(Generation=Generation*-1) %>% 
+  ggplot(aes(x=Date, y=Generation)) +
+  geom_point()+
+  geom_line()+
+  labs(title="Excess monthly power sent to grid",
+       subtitle="2021-2022",
+       y="kWh sent to grid",
+       x="Date")
+
+  
+```
+
+
+
+
+##      Let's look at consumption statistics
+
+```{r surplus}
+
+daily <- df %>% 
+  mutate(Consumed=if_else(Usage<0, 0, Usage)) %>% 
+  group_by(lubridate::floor_date(Date, unit="day")) %>% 
+    #summarize(sum(min(0, Usage))) %>% # Only sum up negative values
+    summarize(sum(Consumed)) %>% # Only sum up negative values
+  rename(Date=1, Consumed=2) #%>% 
+  # mutate(Generation=Generation*-1) %>% 
+daily %>% 
+  ggplot(aes(x=Consumed)) +
+  geom_histogram(binwidth=2)+
+  labs(title="Daily power received from grid",
+       subtitle="2021-2022",
+       x="kWh received from grid",
+       y="Count")
+
+df %>% 
+  mutate(Consumed=if_else(Usage<0, 0, Usage)) %>% 
+  group_by(lubridate::floor_date(Date, unit="day")) %>% 
+    # summarize(sum(min(0, Usage))) %>% # Only sum up negative values
+    summarize(sum(Consumed)) %>% # Only sum up negative values
+  rename(Date=1, Consumed=2) %>% 
+  # mutate(Generation=Generation*-1) %>% 
+  ggplot(aes(x=Date, y=Consumed)) +
+  geom_point()+
+  geom_line()+
+  labs(title="Daily power recieved from grid",
+       subtitle="2021-2022",
+       y="kWh recieved from grid",
+       x="Date")
+
+df %>% 
+  mutate(Consumed=if_else(Usage<0, 0, Usage)) %>% 
+  group_by(lubridate::floor_date(Date, unit="month")) %>% 
+    # summarize(sum(min(0, Usage))) %>% # Only sum up negative values
+    summarize(sum(Consumed)) %>% # Only sum up negative values
+  rename(Date=1, Consumed=2) %>% 
+  # mutate(Generation=Generation*-1) %>% 
+  ggplot(aes(x=Date, y=Consumed)) +
+  geom_point()+
+  geom_line()+
+  labs(title="Monthly power recieved from grid",
+       subtitle="2021-2022",
+       y="kWh recieved from grid",
+       x="Date")
+
+  
+```
+
+##        Attach vacation dates and analyze separately
+
+```{r vaca}
+
+df <- df %>% 
+  mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
+
+daily <- df %>% 
+  mutate(Generated=if_else(Usage<0, -1*Usage, 0)) %>% 
+  mutate(Consumed=if_else(Usage<0, 0, Usage)) %>% 
+  group_by(lubridate::floor_date(Date, unit="day")) %>% 
+    summarize(Generation=sum(Generated), 
+              Consumed=sum(Consumed),
+              vaca=last(Vacation)) %>% 
+  rename(Date=1)  
+
+daily %>% 
+  ggplot(aes(x=Generation, color=vaca)) +
+  geom_histogram(binwidth=1, alpha = 0.4, position = "identity", fill="white")+
+  geom_density(alpha=.2, fill="#FF6666", aes(n=after_stat(count), 
+                                             y=..density..*n*1.6))+
+  guides(fill = guide_legend(title = "Vacation"),
+         colour = guide_legend(title = "Vacation")) +
+  scale_color_discrete(labels = c("Home", "Gone")) +
+  scale_fill_discrete(labels = c("Home", "Gone")) +
+  labs(title="Excess daily power sent to grid",
+       subtitle="2021-2022",
+       x="kWh sent to grid",
+       y="Count")
+
+# daily <- df %>% 
+#   mutate(Consumed=if_else(Usage<0, 0, Usage)) %>% 
+#   group_by(lubridate::floor_date(Date, unit="day")) %>% 
+#     summarize(Consumed=sum(Consumed), vaca=last(Vacation)) %>%
+#   rename(Date=1, Consumed=2)  
+
+daily %>% 
+  ggplot(aes(x=Consumed, color=vaca)) +
+  geom_histogram(binwidth=1, alpha = 0.4, position = "identity", fill="white")+
+  geom_density(alpha=.2, fill="#FF6666", aes(n=after_stat(count), 
+                                             y=..density..*n*1.5))+
+  guides(fill = guide_legend(title = "Vacation"),
+         colour = guide_legend(title = "Vacation")) +
+  scale_color_discrete(labels = c("Home", "Gone")) +
+  scale_fill_discrete(labels = c("Home", "Gone")) +
+  labs(title="Daily power received from the grid",
+       subtitle="2021-2022",
+       x="kWh received from grid",
+       y="Count")
+
+
+daily %>% 
+  ggplot(aes(x=Date, y=Consumed)) +
+  geom_point(aes(group=vaca, color=vaca))+
+  geom_smooth(aes(group=vaca, color=vaca))+
+  geom_point(aes(y=-1*Generation))+
+  geom_smooth(aes(y=-1*Generation))+
+  guides(fill = guide_legend(title = "Vacation"),
+         colour = guide_legend(title = "Vacation")) +
+  scale_color_discrete(labels = c("Home", "Gone")) +
+  scale_fill_discrete(labels = c("Home", "Gone")) +
+  labs(title="Daily power received from the grid",
+       subtitle="2021-2022. Note negative numbers are solar power sent to the grid",
+       y="kWh received from grid",
+       x="Date")
+
+```
+
+##        Pre-construction figures
+
+```{r preconstruction}
+
+daily %>% 
+  filter(Date<lubridate::mdy("8/1/2021")) %>% 
+  ggplot(aes(x=Date, y=Consumed)) +
+  geom_point(aes(group=vaca, color=vaca))+
+  geom_smooth(aes(group=vaca, color=vaca))+
+  geom_point(aes(y=-1*Generation))+
+  geom_smooth(aes(y=-1*Generation))+
+  guides(fill = guide_legend(title = "Vacation"),
+         colour = guide_legend(title = "Vacation")) +
+  scale_color_discrete(labels = c("Home", "Gone")) +
+  scale_fill_discrete(labels = c("Home", "Gone")) +
+  labs(title="Daily power received from the grid",
+       subtitle="Prior to August 2021. Note negative numbers are solar power sent to the grid",
+       y="kWh received from grid",
+       x="Date")
+
+
+
+```
+
+##        Correlations
+
+```{r correlations}
+
+daily %>% 
+  filter(Date<lubridate::mdy("8/1/2021")) %>% 
+  filter(vaca) %>% 
+  ggplot(aes(x=Generation, y=Consumed)) +
+  geom_point()+
+  geom_smooth()
+
+#   collapse weather stuff to daily values
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
