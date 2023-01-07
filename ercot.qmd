@@ -7,8 +7,7 @@ editor: visual
 
 ## Develop a cost model
 
-To analyze various solar buyback plans, I need to have an ERCOT model that will
-let me estimate what sort of wholesale prices might be available.
+To analyze various solar buyback plans, I need to have an ERCOT model that will let me estimate what sort of wholesale prices might be available.
 
 ```{r initialize}
 
@@ -20,7 +19,7 @@ df <- readRDS(paste0(path, "Ercot.rds"))
 
 ```
 
-##    Look at the data
+## Look at the data
 
 Let's look at the data to get a feel for what is going on
 
@@ -110,7 +109,7 @@ cbind(orig=df$LZ_price, new=winsor(df$LZ_price)) %>%
 
 ```
 
-##  Fit the data
+## Fit the data
 
 ```{r fitting}
 foo <- df %>% 
@@ -201,7 +200,6 @@ foo %>%
        x="Hour of Day",
        y="Price in Dollars per mWh")
 ```
-
 
 ```{r Cauchy fitting}
 #####   Let's do some more fitting
@@ -301,7 +299,6 @@ make_icdf <- function(foo, offset=70){
 }
 
 ```
-
 
 ```{r non-parametric fitting}
 
@@ -453,8 +450,7 @@ df_Hourly %>%
 
 ```
 
-
-#   Build all distributions
+# Build all distributions
 
 Build distributions by hour and by month
 
@@ -474,7 +470,3 @@ for (month in month.abb){
 saveRDS(output, paste0(path, "ICDF_Month_Hour.rds"))
 
 ```
-
-
-
-
