@@ -7,9 +7,7 @@ editor: visual
 
 ## Read in various datasets
 
-Read in and clean up data from solar panels, weather data, ERCOT data, and
-Smartmeter data.
-
+Read in and clean up data from solar panels, weather data, ERCOT data, and Smartmeter data.
 
 ```{r init}
 #| echo: false
@@ -20,33 +18,128 @@ path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
 
 ```
 
-##   Read the Tesla data
+## Read the Tesla data
 
 ```{r read Tesla data}
 #| echo: true
  
+#   Time zone
+
+tz <- "America/Chicago"
+
+#   Read numbers downloaded from app (new system and old system)
+
 filenames <- list.files(path = path,
-                        pattern="data.*csv$")
+                        pattern="data[0-9]+.csv$")
 
 filenames <- paste0(path,filenames)
 
 df <- filenames %>% 
-  purrr::map_dfr(read_csv) 
+  purrr::map_dfr(read_csv, col_types="cccccc") 
 
 df <- df %>% 
-  mutate(Date=lubridate::ymd_hms(`Date time`)) %>% 
+  mutate(Date=lubridate::ymd_hms(`Date time`, tz=tz)) %>% 
   select(-`Date time`) %>% 
   rename(Home=`Home (kW)`,
          Solar=`Solar (kW)`,
          Powerwall=`Powerwall (kW)`,
          Grid=`Grid (kW)`,
-         Pct_remain=`Energy Remaining (%)`)
+         Pct_remain=`Energy Remaining (%)`) %>% 
+  mutate(Home=as.numeric(Home),
+         Solar=as.numeric(Solar),
+         Powerwall=as.numeric(Powerwall),
+         Grid=as.numeric(Grid),
+         Pct_remain=as.numeric(Pct_remain))
 
-Home <- df
+App_new <- df
+
+###################   old system from app
+
+filenames <- list.files(path = path,
+                        pattern="data[0-9]+a.csv$")
+
+filenames <- paste0(path,filenames)
+
+df <- filenames %>% 
+  purrr::map_dfr(read_csv, col_types="cc") 
+
+df <- df %>% 
+  mutate(Date=lubridate::ymd_hms(`Date time`, tz=tz)) %>% 
+  select(-`Date time`) %>% 
+  rename(
+         Solar=`Solar (kW)`
+         )
+
+App_old <- df
+
+
+# Read in values pulled off database with python (are these instantaneous values?)
+
+#########   Old data from Susan's account
+
+##    Note units are now Watts
+
+df <- read_csv(paste0(path, "Susan_Tesla_Solar_1.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="America/Chicago"),
+         Solar_W=as.numeric(Solar_kW)) %>% 
+  select(Timestamp, Solar_W)
+
+df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_2.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+         Solar_W=as.numeric(Solar_kW)) %>% 
+  select(Timestamp, Solar_W)
+
+df <- rbind(df, df2)
+
+df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_3.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+         Solar_W=as.numeric(Solar_kW)) %>% 
+  select(Timestamp, Solar_W)
+
+df <- rbind(df, df2)
+
+df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_4.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+         Solar_W=as.numeric(Solar_kW)) %>% 
+  select(Timestamp, Solar_W)
+
+df <- rbind(df, df2) %>% 
+  arrange(Timestamp)
+
+Solar_old <- df
+
+#########   New data from Alan's account
+
+##    Note units are now Watts
+
+df <- read_csv(paste0(path, "Alan_Tesla_Solar_1.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+         Solar_W=as.numeric(Solar_kW),
+         Battery_W=as.numeric(Battery_kW),
+         Grid_W=as.numeric(Grid_kW)) %>% 
+  select(Timestamp, Solar_W, Battery_W, Grid_W)
+
+df2 <- read_csv(paste0(path, "Alan_Tesla_Solar_2.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+         Solar_W=as.numeric(Solar_kW),
+         Battery_W=as.numeric(Battery_kW),
+         Grid_W=as.numeric(Grid_kW)) %>% 
+  select(Timestamp, Solar_W, Battery_W, Grid_W)
+
+df <- rbind(df, df2)
+
+Solar_new <- df
+
 
 ```
 
-##        Read the ERCOT data
+## Read the ERCOT data
 
 ERCOT data from https://www.ercot.com/mktinfo/prices
 
@@ -118,7 +211,7 @@ Ercot <- df %>% as_tibble()
 
 ```
 
-##        Read in the Smart Meter data
+## Read in the Smart Meter data
 
 ```{r smart meter}
 
@@ -138,7 +231,7 @@ Smart <- df2
 
 ```
 
-##        Read in the weather data (for IAH)
+## Read in the weather data (for IAH)
 
 ```{r IAH weather}
 
@@ -164,43 +257,38 @@ Weather <- df2
 
 ```
 
-##        Build file of dates when we were not at home
+## Build file of dates when we were not at home
 
 ```{r vacation}
 
-4/11/21-5/5/21
-5/12/21-10/16/21
-10/21/21-10/29/21
-12/21/21-12/26/21
-5/15/22-5/30/22
-6/7/22-6/26/22
-6/28/22-9/29/22
-10/25/22-11/01/22
-11/21/22-11/24/22
+Vaca <- seq(lubridate::mdy("4/11/21"),lubridate::mdy("5/5/21"), by=1)
+Vaca <- c(Vaca, seq(lubridate::mdy("5/12/21"),lubridate::mdy("6/16/21"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("6/23/21"),lubridate::mdy("10/16/21"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("10/21/21"),lubridate::mdy("10/29/21"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("12/21/21"),lubridate::mdy("12/26/21"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("5/15/22"),lubridate::mdy("5/30/22"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("6/7/22"),lubridate::mdy("6/26/22"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("6/28/22"),lubridate::mdy("9/29/22"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("10/25/22"),lubridate::mdy("11/01/22"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("11/21/22"),lubridate::mdy("11/24/22"),by=1))
 
+Vaca <- lubridate::as_date(Vaca)
 
+saveRDS(Vaca, paste0(path, "Vacation.rds"))
 
 ```
 
-##        Save our cleaned files
+## Save our cleaned files
 
 ```{r save}
 
 saveRDS(Ercot, paste0(path, "Ercot.rds"))
-saveRDS(Home, paste0(path, "Home.rds"))
 saveRDS(Smart, paste0(path, "Smart.rds"))
 saveRDS(Weather, paste0(path, "Weather.rds"))
 
+saveRDS(Solar_old, paste0(path, "Solar_old.rds"))
+saveRDS(Solar_new, paste0(path, "Solar_new.rds"))
+saveRDS(App_old, paste0(path, "App_old.rds"))
+saveRDS(App_new, paste0(path, "App_new.rds"))
+
 ```
-
-
-
-
-
-
-
-
-
-
-
-
