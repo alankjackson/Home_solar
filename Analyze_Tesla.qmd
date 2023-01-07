@@ -1,0 +1,46 @@
+---
+title: "Analyze Tesla"
+author: "Alan Jackson"
+format: html
+editor: visual
+---
+
+## Analyze Tesla data
+
+The tesla data comes from several sources, so we will compare and contrast.
+
+We have the original solar panels, which are on one account, the new solar
+panels and batteries, on a different account, and for both we have data
+downloaded from the app as well as data downloaded with python code off
+the web.
+
+```{r init}
+#| echo: false
+
+library(tidyverse)
+
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
+Solar_new <- readRDS(paste0(path, "Solar_new.rds"))
+App_old <- readRDS(paste0(path, "App_old.rds"))
+App_new <- readRDS(paste0(path, "App_new.rds"))
+
+```
+
+##        Make some plots
+
+```{r first plots}
+
+```
+
+
+
+
+
+
+
+
+
+
+
