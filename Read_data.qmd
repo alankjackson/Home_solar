@@ -65,11 +65,11 @@ df <- filenames %>%
 
 df <- df %>% 
   mutate(Date=lubridate::ymd_hms(`Date time`, tz=tz)) %>% 
-  mutate(Solar=as.numeric(Solar)) %>% 
   select(-`Date time`) %>% 
   rename(
          Solar=`Solar (kW)`
-         )
+         ) %>% 
+  mutate(Solar=as.numeric(Solar)) 
 
 App_old <- df
 
