@@ -220,6 +220,39 @@ Solar_old %>%
 
 ```
 
+##        Build daily models
+
+Build insolation models for each week of the year using the old data, and 
+capturing the max value in each 15 minute segment
+
+```{r isolation}
+
+foo <- Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Week=week(Timestamp), Time=time(Timestamp),
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125) %>% 
+  group_by(Hour, Week) %>%
+    summarize(Hour=last(Hour), Month=last(Month), DST=last(DST),
+              Day=last(Day), Solar=max(Solar_W)) %>% 
+  ungroup() %>% 
+  mutate(PseudoDate=ymd_hm(paste0(paste("2000", Month, Day, sep = "-"),
+                           " ", as.integer(Hour), ":", ((Hour%%1)-0.125)*4*15)))
+
+foo %>% 
+  arrange(PseudoDate) %>% 
+  #head(860) %>% tail(90) %>%  
+  ggplot(aes(x=Hour, y=Solar, group=Week, color=DST))+
+  geom_line()#+
+  scale_x_date(date_breaks = "7 days",
+               labels = scales::label_date_short(format = c(NA, "%B", "%d", "%H:%M")),
+               expand = c(0.005,0.005))
+
+
+
+
+```
 
 
 
