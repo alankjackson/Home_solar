@@ -19,6 +19,7 @@ the web.
 
 library(tidyverse)
 library(lubridate)
+library(scales)
 
 path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
 
@@ -249,7 +250,25 @@ foo %>%
                labels = scales::label_date_short(format = c(NA, "%B", "%d", "%H:%M")),
                expand = c(0.005,0.005))
 
-
+foo <- Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125) %>% 
+  group_by(Date) %>%
+    summarize(kWh=DescTools::AUC(Hour, Solar_W, method="spline")) %>% 
+  mutate(Month=month(Date), Day=day(Date), 
+         PseudoDate=ymd(paste0(paste("2000", Month, Day, sep = "-")))) %>% 
+  group_by(PseudoDate) %>% 
+    summarize(kWh=max(kWh)/1000)
+  
+foo %>% 
+  ggplot(aes(x=PseudoDate, y=kWh)) +
+  geom_line()+
+  geom_smooth()+
+  labs(title="Max kWh output per day, May 2019 - Dec 2022",
+       x = "Time of Year") +
+  scale_date(labels = date_format("%m"))
+  
 
 
 ```
