@@ -267,11 +267,258 @@ foo %>%
   geom_smooth()+
   labs(title="Max kWh output per day, May 2019 - Dec 2022",
        x = "Time of Year") +
-  scale_date(labels = date_format("%m"))
+  scale_x_date(labels = date_format("%B"))
   
+#   Now I need to build a monthly maximum insolation model
+
+foo <- Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  group_by(Month, Hour) %>%
+    summarise(Max=max(Solar_W),
+              std=sd(Solar_W)) 
+
+foo %>% 
+  mutate(MonthName=ordered(month.name[Month], levels=month.name)) %>% 
+  ggplot(aes(x=Hour, y=Max, group=Month)) +
+  facet_wrap(vars(MonthName))+
+  geom_line()
+
 
 
 ```
+
+
+##  Fitting the max curves
+
+```{r curve fitting}
+
+#   Let's try a few spline fits
+
+foobar <- foo %>% filter(Month==5)
+
+Spline <- smooth.spline(foobar$Hour, foobar$Max, 
+                        df=0.01, 
+                       # all.knots=TRUE, 
+                        #nknots=20, 
+                        cv=TRUE)
+Spline_df <- as_tibble(bind_cols(x=Spline$x, y=Spline$y))
+
+foobar %>% 
+  ggplot(aes(x=Hour, y=Max)) +
+  geom_line(color="red") + 
+  geom_line(data=Spline_df, aes(x=x, y=y))
+
+#   Let's do them all
+
+Sfit <- function(foobar){
+  Spline <- smooth.spline(foobar$Hour, foobar$Max, 
+                          df=1, 
+                          cv=TRUE)
+  #as_tibble(bind_cols(x=Spline$x, y=Spline$y))
+  Spline$y
+}
+
+foo %>% 
+  group_by(Month) %>% 
+    mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
+  ungroup() %>% 
+  mutate(MonthName=ordered(month.name[Month], levels=month.name)) %>% 
+  ggplot(aes(x=Hour, y=Max, group=Month)) +
+  facet_wrap(vars(MonthName))+
+  geom_line(color="red") + 
+  geom_line(aes(x=Hour, y=Fit))
+
+foobar <- foo %>% 
+  group_by(Month) %>% 
+    mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
+  ungroup() %>% 
+  mutate(MonthName=ordered(month.name[Month], levels=month.name)) 
+
+saveRDS(foobar,(paste0(path, "MaxSolarByMonth.rds")))
+
+```
+
+
+##        Multiplier from old panels to new panels
+
+Need to scale up the data to reflect the additional capacity
+
+```{r}
+
+foo_old <- Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  group_by(Month, Hour) %>%
+    summarise(Max=max(Solar_W),
+              std=sd(Solar_W)) %>% 
+  filter(Month==12) %>% 
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+
+foo_new <- Solar_new %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/5*0.25,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  filter(Month==12) %>% 
+  group_by(Hour) %>%
+    summarise(Max=max(Solar_W),
+              std=sd(Solar_W)) %>% 
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+
+
+
+foo_old %>% 
+  ggplot(aes(x=Hour, y=Fit)) +
+  geom_line(color="red") + 
+  geom_line(data=foo_new, aes(x=Hour, y=Fit)) +
+  labs(title="Spline fits to old and new data in December")
+
+foo_diff <- left_join(foo_new, foo_old, by="Hour") %>% 
+  filter(!is.na(Month)) %>% 
+  filter(Fit.y>500, Fit.x>100) %>% 
+  mutate(ratio=Fit.x/Fit.y)
+
+Mean_ratio <- signif(mean((foo_diff %>% filter(ratio>1))$ratio),3)
+
+foo_diff %>% 
+  ggplot(aes(x=Hour, y=ratio)) +
+  geom_line() +
+  geom_hline(yintercept=Mean_ratio, color="red")+
+  geom_text(aes(0,Mean_ratio,label = Mean_ratio, vjust = -1), color="red")+
+  labs(title="Ratio between Old and New data for December")
+
+```
+
+##  wrong way to do it
+
+Instead I need to build a transform to take old December to old "other month",
+and then use that transform on new December. It is mostly a time stretch.
+
+```{r transform}
+
+# https://stackoverflow.com/questions/52650467/how-to-estimate-x-value-from-y-value-input-after-approxfun-in-r/52650890#52650890
+RootSpline1 <- function (x, y, y0 = 0, verbose = TRUE) {
+  if (is.unsorted(x)) {
+     ind <- order(x)
+     x <- x[ind]; y <- y[ind]
+     }
+  z <- y - y0
+  ## which piecewise linear segment crosses zero?
+  k <- which(z[-1] * z[-length(z)] <= 0)
+  ## analytical root finding
+  xr <- x[k] - z[k] * (x[k + 1] - x[k]) / (z[k + 1] - z[k])
+  ## make a plot?
+  if (verbose) {
+    plot(x, y, "l"); abline(h = y0, lty = 2)
+    points(xr, rep.int(y0, length(xr)))
+    }
+  ## return roots
+  xr
+}
+
+Sfit <- function(foobar){
+  Spline <- smooth.spline(foobar$Hour, foobar$Max, 
+                          df=1, 
+                          cv=TRUE)
+  #as_tibble(bind_cols(x=Spline$x, y=Spline$y))
+  Spline$y
+}
+
+foo_old <- Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  group_by(Month, Hour) %>%
+    summarise(Max=max(Solar_W),
+              std=sd(Solar_W))  
+
+Jan_old <- foo_old %>% 
+  filter(Month==1) %>% 
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+
+Dec_old <- foo_old %>% 
+  filter(Month==12) %>% 
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+
+# foobar <- foo %>% filter(Month==12)
+
+# Spline <- smooth.spline(foobar$Hour, foobar$Max, 
+                        # df=1,
+                        # cv=TRUE)
+# Spline_df <- as_tibble(bind_cols(Hour=Spline$x, Max=Spline$y))
+
+JanNew <- NULL
+for (y0 in seq(250,5000, 250)){
+  print(y0)
+  tmp <- RootSpline1(Jan_old$Hour, Jan_old$Max, y0, verbose=FALSE)
+  print(tmp)
+  print(bind_cols(as_tibble(x=tmp), y=y0))
+  JanNew <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
+    bind_rows(JanNew)
+}
+
+JanNew <- JanNew %>% 
+  arrange(value) %>% 
+  rename(Hour=value, Max=y)
+
+DecNew <- NULL
+for (y0 in seq(250,5000, 250)){
+  print(y0)
+  tmp <- RootSpline1(Dec_old$Hour, Dec_old$Max, y0, verbose=FALSE)
+  print(tmp)
+  print(bind_cols(as_tibble(x=tmp), y=y0))
+  DecNew <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
+    bind_rows(DecNew)
+}
+
+DecNew <- DecNew %>% 
+  arrange(value) %>% 
+  rename(Hour=value, Max=y)
+
+DecNew %>% 
+  ggplot(aes(x=Hour, y=Max)) +
+  geom_line(color="red") + 
+  geom_point(color="red") + 
+  geom_point(data=JanNew, aes(x=Hour, y=Max))+
+  geom_line(data=JanNew, aes(x=Hour, y=Max)) +
+  scale_x_continuous(breaks=seq(7.5, 18, 0.5))
+
+Diffs <- full_join(DecNew %>% rename(DecHour=Hour), JanNew, by="Max") %>% 
+  mutate(Diff=DecHour-Hour) %>% 
+  arrange(DecHour) %>% 
+  unique() %>% 
+  group_by(DecHour) %>% 
+    summarise(Diff=min(abs(Diff), na.rm=TRUE), Max=last(Max))
+
+Spline <- smooth.spline(Diffs$DecHour, Diffs$Diff, 
+                        df=5,
+                        cv=TRUE)
+Spline_df <- as_tibble(bind_cols(DecHour=Spline$x, Diff_sm=Spline$y))
+
+Diffs %>% 
+  ggplot(aes(x=DecHour, y=Diff))+
+  geom_point() +
+  geom_line()+
+  geom_line(data=Spline_df, aes(x=DecHour, y=Diff_sm)) +
+  scale_x_continuous(breaks=seq(7.5, 18, 0.5))
+
+```
+
+
+
+
 
 
 
