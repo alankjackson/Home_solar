@@ -366,7 +366,7 @@ foo_old <- Solar_old %>%
 foo_new <- Solar_new %>% 
   mutate(DST=dst(Timestamp)) %>% 
   mutate(Date=date(Timestamp)) %>%
-  mutate(Hour=hour(Timestamp) + minute(Timestamp)/5*0.25,  
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/5/12,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
   filter(Month==12) %>% 
   group_by(Hour) %>%
@@ -405,6 +405,7 @@ and then use that transform on new December. It is mostly a time stretch.
 
 ```{r transform}
 
+##################################  RootSpline1
 # https://stackoverflow.com/questions/52650467/how-to-estimate-x-value-from-y-value-input-after-approxfun-in-r/52650890#52650890
 RootSpline1 <- function (x, y, y0 = 0, verbose = TRUE) {
   if (is.unsorted(x)) {
@@ -424,16 +425,18 @@ RootSpline1 <- function (x, y, y0 = 0, verbose = TRUE) {
   ## return roots
   xr
 }
+##################################  RootSpline1
 
+##################################  Sfit
 Sfit <- function(foobar){
   Spline <- smooth.spline(foobar$Hour, foobar$Max, 
                           df=1, 
                           cv=TRUE)
-  #as_tibble(bind_cols(x=Spline$x, y=Spline$y))
   Spline$y
 }
+##################################  Sfit
 
-foo_old <- Solar_old %>% 
+Old_clean <- Solar_old %>% #    Clean up old data and calc Max values by time
   filter(Solar_W<6000) %>% 
   mutate(DST=dst(Timestamp)) %>% 
   mutate(Date=date(Timestamp)) %>%
@@ -444,75 +447,123 @@ foo_old <- Solar_old %>%
     summarise(Max=max(Solar_W),
               std=sd(Solar_W))  
 
-Jan_old <- foo_old %>% 
+Jan_old <- Old_clean %>% 
   filter(Month==1) %>% 
-  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
+  filter(Max>0 |
+           (Max+lag(Max))>0 |
+           (Max+lead(Max)>0))
 
 Dec_old <- foo_old %>% 
   filter(Month==12) %>% 
-  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
+  filter(Max>0 |
+           (Max+lag(Max))>0 |
+           (Max+lead(Max)>0))
 
-# foobar <- foo %>% filter(Month==12)
-
-# Spline <- smooth.spline(foobar$Hour, foobar$Max, 
-                        # df=1,
-                        # cv=TRUE)
-# Spline_df <- as_tibble(bind_cols(Hour=Spline$x, Max=Spline$y))
-
-JanNew <- NULL
-for (y0 in seq(250,5000, 250)){
+Jan_root <- NULL
+for (y0 in seq(0,5000, 250)){
   print(y0)
   tmp <- RootSpline1(Jan_old$Hour, Jan_old$Max, y0, verbose=FALSE)
   print(tmp)
   print(bind_cols(as_tibble(x=tmp), y=y0))
-  JanNew <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
-    bind_rows(JanNew)
+  Jan_root <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
+    bind_rows(Jan_root)
 }
 
-JanNew <- JanNew %>% 
+Jan_root <- Jan_root %>% 
   arrange(value) %>% 
   rename(Hour=value, Max=y)
 
-DecNew <- NULL
-for (y0 in seq(250,5000, 250)){
+Dec_root <- NULL
+for (y0 in seq(0,5000, 250)){
   print(y0)
   tmp <- RootSpline1(Dec_old$Hour, Dec_old$Max, y0, verbose=FALSE)
   print(tmp)
   print(bind_cols(as_tibble(x=tmp), y=y0))
-  DecNew <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
-    bind_rows(DecNew)
+  Dec_root <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
+    bind_rows(Dec_root)
 }
 
-DecNew <- DecNew %>% 
+Dec_root <- Dec_root %>% 
   arrange(value) %>% 
   rename(Hour=value, Max=y)
 
-DecNew %>% 
+Dec_root %>% 
   ggplot(aes(x=Hour, y=Max)) +
   geom_line(color="red") + 
   geom_point(color="red") + 
-  geom_point(data=JanNew, aes(x=Hour, y=Max))+
-  geom_line(data=JanNew, aes(x=Hour, y=Max)) +
+  geom_point(data=Jan_root, aes(x=Hour, y=Max))+
+  geom_line(data=Jan_root, aes(x=Hour, y=Max)) +
   scale_x_continuous(breaks=seq(7.5, 18, 0.5))
 
-Diffs <- full_join(DecNew %>% rename(DecHour=Hour), JanNew, by="Max") %>% 
+Diffs <- full_join(Dec_root %>% rename(DecHour=Hour), Jan_root, by="Max") %>% 
   mutate(Diff=DecHour-Hour) %>% 
   arrange(DecHour) %>% 
+  filter(!is.na(Diff)) %>% 
   unique() %>% 
   group_by(DecHour) %>% 
     summarise(Diff=min(abs(Diff), na.rm=TRUE), Max=last(Max))
 
-Spline <- smooth.spline(Diffs$DecHour, Diffs$Diff, 
+#   Fit smooth spline to differences
+Diff_sm <- smooth.spline(Diffs$DecHour, Diffs$Diff, 
                         df=5,
                         cv=TRUE)
-Spline_df <- as_tibble(bind_cols(DecHour=Spline$x, Diff_sm=Spline$y))
+Diff_sm_df <- as_tibble(bind_cols(DecHour=c(first(Spline$x)-0.08, 
+                                         Spline$x,
+                                         last(Spline$x+0.08)), 
+                                 Diff_sm=c(first(Spline$y), 
+                                           Spline$y, 
+                                           last(Spline$y))))
 
 Diffs %>% 
   ggplot(aes(x=DecHour, y=Diff))+
   geom_point() +
   geom_line()+
-  geom_line(data=Spline_df, aes(x=DecHour, y=Diff_sm)) +
+  geom_line(data=Spline_df, aes(x=DecHour, y=Diff_sm), color="red", linetype="dashed") +
   scale_x_continuous(breaks=seq(7.5, 18, 0.5))
+
+#   Now let's apply the transform to the new data
+
+  #  First interpolate smoothed diff to time points from new December data
+Dec_new <- Solar_new %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/5/12,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  filter(Month==12) %>% 
+  group_by(Hour) %>%
+    summarise(Max=max(Solar_W),
+              std=sd(Solar_W)) %>% 
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+
+Diff_sm_interp <- approx(Diff_sm_df$DecHour, Diff_sm_df$Diff_sm, xout=Dec_new$Hour)
+
+Diff_sm_interp_df <- as_tibble(bind_cols(DecHour=Diff_sm_interp$x, 
+                                         Diff_sm=Diff_sm_interp$y)) %>% 
+  filter(!is.na(Diff_sm))
+
+Diffs %>% 
+  ggplot(aes(x=DecHour, y=Diff))+
+  geom_point() +
+  geom_line()+
+  # geom_line(data=Spline_df, aes(x=DecHour, y=Diff_sm), color="red", linetype="dashed") +
+  # geom_point(data=foo2_df, aes(x=DecHour, y=Diff_sm), color="blue", linetype="dashed") +
+  geom_line(data=Diff_sm_df, aes(x=DecHour, y=Diff_sm), color="red", linetype="dashed") +
+  geom_point(data=Diff_sm_interp_df, aes(x=DecHour, y=Diff_sm), color="blue", linetype="dashed") +
+  scale_x_continuous(breaks=seq(7.5, 18, 0.5))
+
+  # Now apply the diff to the 2022 December data
+
+Jan_xform <- left_join(Dec_new, Diff_sm_interp_df, by=c("Hour"="DecHour")) %>% 
+  mutate(Hour=Hour+Diff_sm)
+
+Jan_xform %>% 
+  ggplot(aes(x=Hour, y=Fit)) +
+  geom_line(data=Dec_new, aes(x=Hour, y=Fit)) +
+  geom_line(color="red") + 
+  labs(title="New December data and transformed January data")
+
 
 ```
 
