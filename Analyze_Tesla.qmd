@@ -341,6 +341,8 @@ foobar <- foo %>%
 
 saveRDS(foobar,(paste0(path, "MaxSolarByMonth.rds")))
 
+Old_data_sm <- foobar
+
 ```
 
 
@@ -430,7 +432,6 @@ RootSpline1 <- function (x, y, y0 = 0, verbose = TRUE) {
 ##################################  Sfit
 Sfit <- function(foobar){
   Spline <- smooth.spline(foobar$Hour, foobar$Max, 
-                          df=1, 
                           cv=TRUE)
   Spline$y
 }
@@ -447,6 +448,12 @@ Old_clean <- Solar_old %>% #    Clean up old data and calc Max values by time
     summarise(Max=max(Solar_W),
               std=sd(Solar_W))  
 
+# Old_clean_sm <- Old_clean %>% 
+#   group_by(Month) %>% 
+#     mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
+#   ungroup() %>% 
+#   mutate(MonthName=ordered(month.name[Month], levels=month.name)) 
+
 Jan_old <- Old_clean %>% 
   filter(Month==1) %>% 
   mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
@@ -454,7 +461,7 @@ Jan_old <- Old_clean %>%
            (Max+lag(Max))>0 |
            (Max+lead(Max)>0))
 
-Dec_old <- foo_old %>% 
+Dec_old <- Old_clean %>% 
   filter(Month==12) %>% 
   mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
   filter(Max>0 |
@@ -463,10 +470,10 @@ Dec_old <- foo_old %>%
 
 Jan_root <- NULL
 for (y0 in seq(0,5000, 250)){
-  print(y0)
+  #print(y0)
   tmp <- RootSpline1(Jan_old$Hour, Jan_old$Max, y0, verbose=FALSE)
-  print(tmp)
-  print(bind_cols(as_tibble(x=tmp), y=y0))
+  #print(tmp)
+  #print(bind_cols(as_tibble(x=tmp), y=y0))
   Jan_root <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
     bind_rows(Jan_root)
 }
@@ -477,10 +484,10 @@ Jan_root <- Jan_root %>%
 
 Dec_root <- NULL
 for (y0 in seq(0,5000, 250)){
-  print(y0)
+  #print(y0)
   tmp <- RootSpline1(Dec_old$Hour, Dec_old$Max, y0, verbose=FALSE)
-  print(tmp)
-  print(bind_cols(as_tibble(x=tmp), y=y0))
+  #print(tmp)
+  #print(bind_cols(as_tibble(x=tmp), y=y0))
   Dec_root <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
     bind_rows(Dec_root)
 }
@@ -497,6 +504,8 @@ Dec_root %>%
   geom_line(data=Jan_root, aes(x=Hour, y=Max)) +
   scale_x_continuous(breaks=seq(7.5, 18, 0.5))
 
+########    Calculate differences
+
 Diffs <- full_join(Dec_root %>% rename(DecHour=Hour), Jan_root, by="Max") %>% 
   mutate(Diff=DecHour-Hour) %>% 
   arrange(DecHour) %>% 
@@ -509,18 +518,18 @@ Diffs <- full_join(Dec_root %>% rename(DecHour=Hour), Jan_root, by="Max") %>%
 Diff_sm <- smooth.spline(Diffs$DecHour, Diffs$Diff, 
                         df=5,
                         cv=TRUE)
-Diff_sm_df <- as_tibble(bind_cols(DecHour=c(first(Spline$x)-0.08, 
-                                         Spline$x,
-                                         last(Spline$x+0.08)), 
-                                 Diff_sm=c(first(Spline$y), 
-                                           Spline$y, 
-                                           last(Spline$y))))
+Diff_sm_df <- as_tibble(bind_cols(DecHour=c(first(Diff_sm$x)-0.08, 
+                                         Diff_sm$x,
+                                         last(Diff_sm$x+0.08)), 
+                                 Diff_sm=c(first(Diff_sm$y), 
+                                           Diff_sm$y, 
+                                           last(Diff_sm$y))))
 
 Diffs %>% 
   ggplot(aes(x=DecHour, y=Diff))+
   geom_point() +
   geom_line()+
-  geom_line(data=Spline_df, aes(x=DecHour, y=Diff_sm), color="red", linetype="dashed") +
+  geom_line(data=Diff_sm_df, aes(x=DecHour, y=Diff_sm), color="red", linetype="dashed") +
   scale_x_continuous(breaks=seq(7.5, 18, 0.5))
 
 #   Now let's apply the transform to the new data
@@ -529,13 +538,19 @@ Diffs %>%
 Dec_new <- Solar_new %>% 
   mutate(DST=dst(Timestamp)) %>% 
   mutate(Date=date(Timestamp)) %>%
-  mutate(Hour=hour(Timestamp) + minute(Timestamp)/5/12,  
+  mutate(Hour=hour(Timestamp) + (minute(Timestamp)/5)/12,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
   filter(Month==12) %>% 
   group_by(Hour) %>%
     summarise(Max=max(Solar_W),
               std=sd(Solar_W)) %>% 
-  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))
+
+Dec_new %>% 
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>%  
+  ggplot(aes(x=Hour, y=Max))+
+  geom_line()+
+  geom_point(aes(y=Fit))
 
 Diff_sm_interp <- approx(Diff_sm_df$DecHour, Diff_sm_df$Diff_sm, xout=Dec_new$Hour)
 
@@ -568,6 +583,122 @@ Jan_xform %>%
 ```
 
 
+##        Now do all the months
+
+```{r all xforms}
+
+Dec_new <- Solar_new %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/5/12,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  filter(Month==12) %>% 
+  group_by(Hour) %>%
+    summarise(Max=max(Solar_W),
+              std=sd(Solar_W)) %>% 
+  mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
+
+New_xform <-  Dec_new
+
+for (mon in 1:11) {
+
+  Target_old <- Old_clean %>% 
+    filter(Month==mon) %>% 
+    mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
+    filter(Max>0 |
+             (Max+lag(Max))>0 |
+             (Max+lead(Max)>0))
+  Target_root <- NULL
+  for (y0 in seq(0,5000, 250)){
+    tmp <- RootSpline1(Target_old$Hour, Target_old$Max, y0, verbose=FALSE)
+    Target_root <- bind_cols(as_tibble(x=tmp), y=y0) %>%  
+      bind_rows(Target_root)
+  }
+  
+  Target_root <- Target_root %>% 
+    arrange(value) %>% 
+    rename(Hour=value, Max=y)
+  
+  #   Plot December and target month
+  
+  p <- Dec_root %>% 
+    ggplot(aes(x=Hour, y=Max)) +
+    geom_line(color="red") + 
+    geom_point(color="red") + 
+    geom_point(data=Target_root, aes(x=Hour, y=Max))+
+    geom_line(data=Target_root, aes(x=Hour, y=Max)) +
+    scale_x_continuous(breaks=seq(5.5, 19, 0.5))
+  
+  print(p)
+  
+########    Calculate differences
+
+  Diffs <- full_join(Dec_root %>% rename(DecHour=Hour), Target_root, by="Max") %>% 
+    mutate(Diff=DecHour-Hour) %>% 
+    arrange(DecHour) %>% 
+    filter(!is.na(Diff)) %>% 
+    unique() %>% 
+    group_by(DecHour) %>% 
+      summarise(Diff=min(abs(Diff), na.rm=TRUE), Max=last(Max))
+  
+  #   Fit smooth spline to differences
+  Diff_sm <- smooth.spline(Diffs$DecHour, Diffs$Diff, 
+                          df=5,
+                          cv=TRUE)
+  Diff_sm_df <- as_tibble(bind_cols(DecHour=c(first(Diff_sm$x)-0.08, 
+                                           Diff_sm$x,
+                                           last(Diff_sm$x+0.08)), 
+                                   Diff_sm=c(first(Diff_sm$y), 
+                                             Diff_sm$y, 
+                                             last(Diff_sm$y))))
+  
+ p <-  Diffs %>% 
+    ggplot(aes(x=DecHour, y=Diff))+
+    geom_point() +
+    geom_line()+
+    geom_line(data=Diff_sm_df, aes(x=DecHour, y=Diff_sm), color="red", linetype="dashed") +
+    scale_x_continuous(breaks=seq(7.5, 18, 0.5))  
+ 
+ #print(p)
+
+  #   Now let's apply the transform to the new data
+  
+    #  First interpolate smoothed diff to time points from new December data
+
+  Diff_sm_interp <- approx(Diff_sm_df$DecHour, Diff_sm_df$Diff_sm, xout=Dec_new$Hour)
+  
+  Diff_sm_interp_df <- as_tibble(bind_cols(DecHour=Diff_sm_interp$x, 
+                                           Diff_sm=Diff_sm_interp$y)) %>% 
+    filter(!is.na(Diff_sm))
+  
+p <-  Diffs %>% 
+    ggplot(aes(x=DecHour, y=Diff))+
+    geom_point() +
+    geom_line()+
+    geom_line(data=Diff_sm_df, aes(x=DecHour, y=Diff_sm), color="red", linetype="dashed") +
+    geom_point(data=Diff_sm_interp_df, aes(x=DecHour, y=Diff_sm), color="blue", linetype="dashed") +
+    scale_x_continuous(breaks=seq(7.5, 18, 0.5))
+   
+#print(p)
+
+  # Now apply the diff to the 2022 December data
+
+  Xform <- left_join(Dec_new, Diff_sm_interp_df, by=c("Hour"="DecHour")) %>% 
+    mutate(Hour=Hour+Diff_sm)
+  
+  p <- Xform %>% 
+    ggplot(aes(x=Hour, y=Fit)) +
+    geom_line(data=Dec_new, aes(x=Hour, y=Fit)) +
+    geom_line(color="red") + 
+    labs(title=paste("New December data and transformed", month.name[mon] , "data"))
+  
+  print(p)
+  
+  New_xform <- bind_rows(New_xform, Xform)
+
+}
+
+```
 
 
 
