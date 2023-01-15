@@ -1,0 +1,86 @@
+---
+title: "Analyze Weather Data"
+author: "Alan Jackson"
+format: html
+editor: visual
+---
+
+## Read in and analyze weather data
+
+
+```{r init}
+#| echo: false
+
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(stringr)
+
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+Weather <- readRDS(paste0(path, "Weather.rds"))
+
+```
+
+##    Put data on 15 minute intervals
+
+```{r interpolate}
+
+tz <- "America/Chicago"
+
+xout <- seq(mdy_hm("01-01-2013T00:00", tz=tz),
+            mdy_hm("12-31-2022T00:00", tz=tz),
+            by=15*60)
+
+Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout)
+Weather_P <- approx(Weather$Date, Weather$Precip, xout=xout)
+
+#   Pick out max cloud cover factor
+
+Weather <- Weather %>% 
+  rowwise() %>% 
+  mutate(Cloudiness= 
+                as.numeric(
+                 str_extract(
+                 max(
+                 unlist(
+                 str_extract_all(Sky, ":\\d+"))), "\\d+"))
+                 ) %>% 
+  ungroup()
+
+Weather_C <- approx(Weather$Date, Weather$Cloudiness, xout=xout)
+
+as_tibble(bind_cols(Date=Weather_T$x, 
+                    Temperature=Weather_T$y)) %>%   
+  head(5000) %>% 
+  ggplot(aes(x=Date, y=Temperature)) +
+  geom_line()
+
+as_tibble(bind_cols(Date=Weather_P$x, 
+                    Precip=Weather_P$y)) %>%   
+  head(5000) %>% 
+  ggplot(aes(x=Date, y=Precip)) +
+  geom_line()
+
+as_tibble(bind_cols(Date=Weather_C$x, 
+                    Cloudiness=Weather_C$y)) %>%   
+  head(5000) %>% 
+  ggplot(aes(x=Date, y=Cloudiness)) +
+  geom_line()
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
