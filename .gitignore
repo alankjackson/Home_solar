@@ -28,3 +28,5 @@ vignettes/*.pdf
 .Renviron
 Tulane_Solar.Rproj
 Data
+GetTokenAndSiteid.py
+Tesla_Dump_Daily_power.py
