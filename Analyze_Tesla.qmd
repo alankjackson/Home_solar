@@ -317,7 +317,7 @@ foobar %>%
 
 Sfit <- function(foobar){
   Spline <- smooth.spline(foobar$Hour, foobar$Max, 
-                          df=1, 
+                          #df=1, 
                           cv=TRUE)
   #as_tibble(bind_cols(x=Spline$x, y=Spline$y))
   Spline$y
@@ -698,9 +698,76 @@ p <-  Diffs %>%
 
 }
 
+saveRDS(New_xform,(paste0(path, "MaxSolarByMonth.rds")))
+
 ```
 
+##        Let's look at the mean and minimum values    
 
+```{r mean}
+
+foo <- Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  group_by(Month, Hour) %>%
+    summarise(Max=max(Solar_W),
+              Mean=mean(Solar_W),
+              Min=min(Solar_W),
+              std=sd(Solar_W)) 
+
+Old_stats <- foo %>% 
+  filter(Max>0 |
+           (Max+lag(Max))>0 |
+           (Max+lead(Max)>0)) %>% 
+  group_by(Month) %>% 
+    mutate(Fit_mean=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Mean)))) %>% 
+    mutate(Fit_min=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Min)))) %>% 
+    mutate(Fit_max=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max)))) %>% 
+  ungroup() %>% 
+  mutate(MonthName=ordered(month.name[Month], levels=month.name)) 
+
+Old_stats %>% 
+  ggplot(aes(x=Hour, y=Max, group=Month)) +
+  facet_wrap(vars(MonthName))+
+  geom_line(color="red") + 
+  geom_line(aes(x=Hour, y=Fit_max))+
+  geom_line(aes(x=Hour, y=Fit_mean), color="blue")+
+  geom_line(aes(x=Hour, y=Fit_min), color="orange")+
+  geom_line(aes(x=Hour, y=Fit_mean+std), color="blue",linetype="dashed")+
+  geom_line(aes(x=Hour, y=Fit_mean-std), color="blue", linetype="dashed")
+
+Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  mutate(MonthName=ordered(month.name[Month], levels=month.name)) %>% 
+  filter(Hour>8 & Hour < 17) %>% 
+  ggplot(aes(x=Solar_W, group=Month)) +
+  facet_wrap(vars(MonthName))+
+  geom_histogram(binwidth=200)
+  
+Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  filter(Hour>8 & Hour < 17) %>% 
+  left_join(., Old_stats, by=c("Hour", "Month")) %>% 
+  mutate(Ratio=Solar_W/Fit_max) %>% 
+  ggplot(aes(x=Ratio, group=Month)) +
+  facet_wrap(vars(MonthName))+
+  geom_histogram()
+
+```
 
 
 
