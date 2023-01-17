@@ -50,27 +50,96 @@ Weather <- Weather %>%
 
 Weather_C <- approx(Weather$Date, Weather$Cloudiness, xout=xout)
 
-as_tibble(bind_cols(Date=Weather_T$x, 
-                    Temperature=Weather_T$y)) %>%   
-  head(5000) %>% 
-  ggplot(aes(x=Date, y=Temperature)) +
-  geom_line()
+Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x, 
+                    Temperature=Weather_T$y,
+                    Precip=Weather_P$y,
+                    Cloudiness=Weather_C$y))   
 
-as_tibble(bind_cols(Date=Weather_P$x, 
-                    Precip=Weather_P$y)) %>%   
-  head(5000) %>% 
-  ggplot(aes(x=Date, y=Precip)) +
+Weather_trp %>%
+  head(5000) %>%
+  pivot_longer(!Date, names_to="Measurement", values_to="Value") %>% 
+  ggplot(aes(x=Date, y=Value, group=Measurement)) +
+  facet_wrap(vars(Measurement), scales="free_y")+
   geom_line()
-
-as_tibble(bind_cols(Date=Weather_C$x, 
-                    Cloudiness=Weather_C$y)) %>%   
-  head(5000) %>% 
-  ggplot(aes(x=Date, y=Cloudiness)) +
-  geom_line()
-
 
 ```
 
+##        Cloudiness and Precip by week
+
+```{r cloudy}
+
+```
+
+
+##        Do a quick look at correlations with solar output
+
+```{r solar}
+
+#   Dates panels were removed and then replaced
+lower <- mdy_hm("08-21-2021T00:00")
+upper <- mdy_hm("10-01-2022T23:59")
+
+Solar_old <- readRDS(paste0(path, "Solar_old.rds")) %>% 
+  mutate(Solar_W=if_else(between(Timestamp, lower, upper), Solar_W*2, Solar_W))
+
+foo <- left_join(Weather_trp, Solar_old, by=c("Date"="Timestamp")) %>% 
+  filter(!is.na(Solar_W))
+
+foo %>% 
+  mutate(Hour=hour(Date) + minute(Date)/15*0.25) %>% 
+  filter(between(Hour, 10.9, 13.1)) %>% 
+  ggplot(aes(x=Cloudiness, y=Solar_W))+
+  geom_point() +
+  geom_smooth(method="lm")
+
+foo %>% 
+  mutate(Hour=hour(Date) + minute(Date)/15*0.25) %>% 
+  filter(between(Hour, 10.9, 13.1)) %>% 
+  ggplot(aes(x=Precip, y=Solar_W))+
+  geom_point() +
+  geom_smooth(method="lm")
+
+foo %>% 
+  mutate(Hour=hour(Date) + minute(Date)/15*0.25) %>% 
+  filter(between(Hour, 10.9, 13.1)) %>% 
+  ggplot(aes(x=Temperature, y=Solar_W))+
+  geom_point(size=0.1) +
+  labs(title="Solar output between 11:00 and 13:00, vs Air Temperature",
+       subtitle="May 2019 through December 2022",
+       y="kWh",
+       x="Air Temperature degrees F") +
+  geom_abline(slope=-40, intercept=6500, color="blue")
+
+foo %>% 
+  mutate(Hour=hour(Date) + minute(Date)/15*0.25) %>% 
+  filter(between(Hour, 10.9, 13.1)) %>% 
+  ggplot(aes(x=Cloudiness, y=Solar_W))+
+  geom_point(size=0.1) +
+  labs(title="Solar output between 11:00 and 13:00, vs Cloudiness",
+       subtitle="May 2019 through December 2022",
+       y="kWh",
+       x="Octants Sky Covered by Cloud") +
+  geom_smooth(method="lm")
+  geom_abline(slope=-40, intercept=6500, color="blue")
+  
+  #   Ridgeline plot
+  
+  foo %>% 
+  mutate(Hour=hour(Date) + minute(Date)/15*0.25) %>% 
+    filter(Solar_W<6000) %>% 
+  filter(between(Hour, 10.99, 13.01)) %>% 
+    filter(Cloudiness<8.5) %>% 
+  mutate(Cloudiness=as.factor(round(Cloudiness))) %>% 
+    ggplot(aes(x=Solar_W, y=Cloudiness, fill=stat(x)))+
+    ggridges::geom_density_ridges_gradient(scale=3)+
+    scale_fill_viridis_c(name = "kWh", option = "C")+
+    labs(title="Power output vs. Cloudiness, 11:00-13:00",
+       subtitle="May 2019 through December 2022",
+       x="kWh",
+       y="Octants Sky Covered by Cloud") 
+    
+
+```
 
 
 
