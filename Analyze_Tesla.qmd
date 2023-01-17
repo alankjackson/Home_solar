@@ -769,6 +769,63 @@ Solar_old %>%
 
 ```
 
+#       Let's look at how to build insolation probability curves
+
+Want to have curves by Hour by Month
+
+```{r insolation}
+#! warning: false
+foo <- Solar_old %>% 
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  group_by(Month, Hour) %>%
+    mutate(Max=max(Solar_W),
+           Mean=mean(Solar_W),
+           Min=min(Solar_W),
+           PctMax=Solar_W/Max,
+           std=sd(Solar_W)) %>% 
+  ungroup() %>% 
+  filter(Max>0 |
+           (Max+lag(Max))>0 |
+           (Max+lead(Max)>0)) 
+
+foo %>% 
+  #filter(Month==12) %>% 
+  mutate(MonthName=ordered(month.name[Month], levels=month.name)) %>% 
+  mutate(Hour=as.factor(round(Hour))) %>% 
+    ggplot(aes(x=Solar_W, y=Hour, fill=stat(x)))+
+    ggridges::geom_density_ridges_gradient(scale=2.5, panel_scaling = FALSE)+
+    scale_fill_viridis_c(name = "kWh", option = "C")+
+    facet_wrap(vars(MonthName))+
+    labs(title="kWh vs. Hour of Day",
+       subtitle="2019 through 2022",
+       x="kWh",
+       y="Hour of Day") 
+
+foo %>% 
+  #filter(Month==12) %>% 
+  mutate(MonthName=ordered(month.name[Month], levels=month.name)) %>% 
+  mutate(Hour=as.factor(round(Hour))) %>% 
+    ggplot(aes(x=PctMax, y=Hour, fill=stat(x)))+
+    ggridges::geom_density_ridges_gradient(scale=2.5, panel_scaling = FALSE)+
+    scale_fill_viridis_c(name = "Percent Max", option = "C")+
+    facet_wrap(vars(MonthName))+
+    labs(title="Percent Max vs. Hour of Day",
+       subtitle="2019 through 2022",
+       x="Pct Max",
+       y="Hour of Day") 
+```
+
+##        Build probability distributions of PctMax vs Hour and Month
+
+```{r PctMax}
+
+```
+
 
 
 
