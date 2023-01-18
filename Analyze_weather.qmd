@@ -68,6 +68,22 @@ Weather_trp %>%
 
 ```{r cloudy}
 
+Weather_trp %>% 
+  filter(Precip>0.01) %>% 
+  ggplot(aes(x=Precip, y=Cloudiness)) +
+  geom_point()
+
+Weather_trp %>% 
+    filter(Cloudiness<8.5) %>% 
+  filter(Precip>0) %>% 
+  mutate(Cloudiness=as.factor(round(Cloudiness))) %>% 
+    ggplot(aes(x=log(Precip), y=Cloudiness, fill=stat(x)))+
+    ggridges::geom_density_ridges_gradient(scale=2.5)+
+    scale_fill_viridis_c(name = "log(Precip (in))", option = "C")+
+    labs(title="Log Precipitation vs. Cloudiness",
+       subtitle="2013 through 2022",
+       x="Log Inches of Precipitation",
+       y="Octants Sky Covered by Cloud") 
 ```
 
 
@@ -124,7 +140,25 @@ foo %>%
   
   #   Ridgeline plot
   
-  foo %>% 
+tmp <- foo %>% 
+  mutate(Hour=hour(Date) + minute(Date)/15*0.25) %>% 
+    filter(Solar_W<6000) %>% 
+  filter(between(Hour, 10.99, 13.01)) %>% 
+    filter(Cloudiness<8.5) %>% 
+  mutate(Cloudiness=as.factor(round(Cloudiness))) %>% 
+  group_by(Cloudiness) %>% 
+     summarize(Mval=mean(Solar_W)) %>% 
+  mutate(Cloudiness=as.numeric(Cloudiness))
+
+tmp <- (predict(lm(tmp$Cloudiness ~ tmp$Mval), 
+                new_data=c(0, 4500)))
+                #new_data=as_tibble(Mval=seq(0, 4500, 4500))))
+
+#tmp <- as_tibble(bind_cols(Mval=seq(4500, 500, -4000), Cloudiness=tmp))
+tmp <- as_tibble(bind_cols(Mval=c(4500, 500), Cloudiness=c(tmp[1], tmp[9])))
+
+  
+foo %>% 
   mutate(Hour=hour(Date) + minute(Date)/15*0.25) %>% 
     filter(Solar_W<6000) %>% 
   filter(between(Hour, 10.99, 13.01)) %>% 
@@ -132,6 +166,7 @@ foo %>%
   mutate(Cloudiness=as.factor(round(Cloudiness))) %>% 
     ggplot(aes(x=Solar_W, y=Cloudiness, fill=stat(x)))+
     ggridges::geom_density_ridges_gradient(scale=3)+
+  geom_line(data=tmp, aes(x=Mval, y=Cloudiness))+
     scale_fill_viridis_c(name = "kWh", option = "C")+
     labs(title="Power output vs. Cloudiness, 11:00-13:00",
        subtitle="May 2019 through December 2022",
