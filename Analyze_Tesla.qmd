@@ -400,12 +400,70 @@ foo_diff %>%
 
 ```
 
-##  wrong way to do it
+```{r functions}
 
-Instead I need to build a transform to take old December to old "other month",
-and then use that transform on new December. It is mostly a time stretch.
+#   https://rdrr.io/github/sethmcg/climod/src/R/pdf2cdf.R
+pdf2cdf <- function(p, x=NULL, normalize=TRUE, expand=FALSE){
+    if(is.null(x)) {
+        if(is.atomic(p)){
+            y <- p
+            x <- seq(length(y))
+        } else {
+            stopifnot(exists("x", where=p) && exists("y", where=p))
+            y <- p$y
+            x <- p$x
+        }
+    } else {
+        stopifnot(is.atomic(p) && is.atomic(x))
+        y <- p
+    }
+    
+    stopifnot(length(x)==length(y))
+    stopifnot(length(x) > 2)
+    stopifnot(all(is.finite(x)))
+    stopifnot(all(is.finite(y)))
+    stopifnot(all(diff(x) > 0))
 
-```{r transform}
+    if(any(y < 0)){
+        y[y < 0] <- 0
+    }
+    
+    ## trapezoids: N = no., L = left height, R = right height, W = width
+    N <- length(y) + 1
+    L <- c(0,y)
+    R <- c(y,0)
+    W <- diff(x)
+    W <- c(W[1], W, W[N-2])
+    area <- W * (L + R) / 2
+    cdf <- cumsum(area)
+
+    if(normalize){
+        cdf <- cdf / cdf[N]
+    }
+    if(expand){
+        return(list(x=c(x[1]-W[1],x,x[N-1]+W[N]), y=c(0,cdf)))
+    } else {
+        return(list(x=x, y=cdf[-N]))
+    }
+}
+
+make_icdf <- function(foo, offset=0){
+  #   density 
+  denf = density(foo$PctMax, adjust=1, n=4096)
+  #   Convert to CDF
+  cdf <- pdf2cdf(denf)
+  #   Build data frame
+  #dens = data.frame(x=denf$x, y=denf$y)
+  #   Build data frame
+  cdf <- data.frame(x=denf$x, y=cdf$y)
+  #   Spline fit function
+  q <- splinefun(cdf$y, cdf$x, method="monoH.FC")
+  #   Output points
+  probs <- seq(0,1,0.001)
+  #   Invert CDF
+  icdf <- as_tibble(cbind(PctMax=q(probs)-offset, Prob=probs))
+  return(icdf)
+}
 
 ##################################  RootSpline1
 # https://stackoverflow.com/questions/52650467/how-to-estimate-x-value-from-y-value-input-after-approxfun-in-r/52650890#52650890
@@ -436,6 +494,13 @@ Sfit <- function(foobar){
   Spline$y
 }
 ##################################  Sfit
+```
+##  wrong way to do it
+
+Instead I need to build a transform to take old December to old "other month",
+and then use that transform on new December. It is mostly a time stretch.
+
+```{r transform}
 
 Old_clean <- Solar_old %>% #    Clean up old data and calc Max values by time
   filter(Solar_W<6000) %>% 
@@ -823,6 +888,67 @@ foo %>%
 ##        Build probability distributions of PctMax vs Hour and Month
 
 ```{r PctMax}
+
+#   Try out January
+
+foobar <- foo %>% 
+  mutate(Hour=round(Hour)) %>% 
+  filter(Month==1) %>% 
+  filter(Hour==14)
+
+icdf <- make_icdf(foobar, offset=0)
+
+icdf %>% 
+  ggplot(aes(x=PctMax, y=Prob)) +
+  geom_point()+
+  geom_line()
+
+foobar <- foo %>% 
+  mutate(Hour=round(Hour)) %>% 
+  filter(Month==5) %>% 
+  filter(Hour==14)
+
+icdf <- make_icdf(foobar, offset=0) %>% 
+  rowwise() %>% 
+  mutate(PctMax=max(0, PctMax)) %>%  
+  mutate(PctMax=min(1, PctMax)) %>% 
+  ungroup()
+
+icdf %>% 
+  ggplot(aes(x=PctMax, y=Prob)) +
+  geom_point()+
+  geom_line()
+
+##########   do them all
+
+foo2 <- foo %>% 
+  mutate(Hour=round(Hour)) %>% 
+  filter(Hour>6) %>% 
+  filter(Hour<21) %>% 
+  filter(!is.nan(PctMax))
+
+Start_Hour <- min(foo2$Hour)
+End_Hour <- max(foo2$Hour)
+
+output <- NULL
+for (month in 1:12){
+  for (hour in Start_Hour:End_Hour){
+    print(paste(month, hour))
+    foobar <- foo2 %>% filter(Hour==hour) %>% filter(Month==month)
+    if (nrow(foobar)<3) {next}
+    icdf <- make_icdf(foobar, offset=0) %>% 
+      rowwise() %>% 
+      mutate(PctMax=max(0, PctMax)) %>%  
+      mutate(PctMax=min(1, PctMax)) %>% 
+      ungroup()
+    #icdf <- make_icdf(foobar, offset=0)
+    icdf <- icdf %>% mutate(Month=month, Hour=hour)
+    output <- rbind(output, icdf)
+  }
+}
+
+saveRDS(output, paste0(path, "ICDF_Month_Hour_PctMax.rds"))
+
 
 ```
 
