@@ -1,0 +1,39 @@
+---
+title: "Build Home Model"
+author: "Alan Jackson"
+format: html
+editor: visual
+---
+
+## Build a Home model
+
+Home will be a function of Temperature, vacation, and time of day
+
+```{r initialize}
+
+library(tidyverse)
+library(lubridate)
+library(scales)
+
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+df <- readRDS(paste0(path, "Smart.rds"))
+Vaca <- readRDS(paste0(path, "Vacation.rds"))
+Weather <- readRDS(paste0(path, "Weather.rds")) %>% 
+  filter(Date>lubridate::mdy("1/1/2021"))
+Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
+
+Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
+  filter(Solar_W<6000) %>% 
+  mutate(DST=dst(Timestamp)) %>% 
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
+         Month=month(Timestamp), Day=day(Timestamp)) %>%
+  mutate(Hour=if_else(DST, Hour-1, Hour)) 
+
+df <- df %>% filter(!is.na(Usage)) %>% 
+  mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
+
+```
+
+
