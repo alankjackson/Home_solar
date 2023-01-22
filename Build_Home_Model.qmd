@@ -17,10 +17,13 @@ library(scales)
 
 path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
 
+tz <- "America/Chicago"
+
 df <- readRDS(paste0(path, "Smart.rds"))
 Vaca <- readRDS(paste0(path, "Vacation.rds"))
 Weather <- readRDS(paste0(path, "Weather.rds")) %>% 
-  filter(Date>lubridate::mdy("1/1/2021"))
+  filter(Date>lubridate::mdy_hms("01-01-2021T00:00:00")) %>% 
+  filter(!is.na(Temperature))
 Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
 
 Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
@@ -35,5 +38,33 @@ df <- df %>% filter(!is.na(Usage)) %>%
   mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
 
 ```
+
+##        Clean up Weather data
+
+All I need is temperature every 15 minutes
+
+```{r weather}
+tz <- "America/Chicago"
+
+xout <- seq(mdy_hm("01-01-2021T00:00", tz=tz),
+            mdy_hm("12-31-2022T00:00", tz=tz),
+            by=15*60)
+
+Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout)
+
+Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x, 
+                    Temperature=Weather_T$y))
+
+```
+
+
+
+
+
+
+
+
+
+
 
 
