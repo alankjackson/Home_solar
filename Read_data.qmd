@@ -226,26 +226,18 @@ df3 <- df2 %>%
                                       as.character(Hour-1), ":",
                                       as.character((Interval-1)*15)),tz=tz)) %>% 
     mutate(DST=dst(LDate)) %>% 
-    mutate(DST=dst(LDate) | dst(LDate-1)) %>% 
     mutate(UDate=lubridate::mdy_hm(paste0(Date, " ",
                                       as.character(Hour-1), ":",
                                       as.character((Interval-1)*15)), tz="UTC")) %>% 
-    group_by(Name, date(LDate)) %>% # this takes care of Fall transition day, almost
-       mutate(ToShift=duplicated(UDate, fromLast=TRUE)) %>% 
-    ungroup() %>% 
-    filter(!is.na(DST)) %>% 
-    mutate(NewDate=if_else(DST|ToShift, UDate-hours(1), UDate)) #%>% 
-    select(-LDate, -DST, -ToShift, -UDate, -`date(LDate)`)
+    mutate(NewDate=if_else(DST|(Repeat=='Y'), UDate-hours(1), UDate)) %>% 
+    select(-LDate, -DST, -Repeat, -UDate)
 
-df <- df2 %>% 
-  mutate(Date=lubridate::mdy_hm(paste(Date,
-                                      as.character(Hour),
-                                      as.character((Interval-1)*15)), tz="UTC")) %>% 
-  pivot_wider(Date, names_from = "Name", values_from = "Price") %>% 
+df <- df3 %>% 
+  pivot_wider(NewDate, names_from = "Name", values_from = "Price") %>% 
   rowwise() %>% 
   mutate(LZ1=unlist(LZ_HOUSTON)[1], LZ2=unlist(LZ_HOUSTON)[2], HUB=HB_HOUSTON[[1]]) %>% 
   mutate(Hub_price=HUB, LZ_price=mean(LZ1, LZ2)) %>% 
-  select(Date, Hub_price, LZ_price) %>% 
+  select(Date=NewDate, Hub_price, LZ_price) %>% 
   ungroup()
 
 #   Don't know why this helps, but it helps immensely - it's rowwise!!
