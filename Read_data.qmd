@@ -13,8 +13,34 @@ Read in and clean up data from solar panels, weather data, ERCOT data, and Smart
 #| echo: false
 
 library(tidyverse)
+library(lubridate)
+
+#   Time zone
+
+tz <- "America/Chicago"
 
 path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+```
+
+## Functions
+
+```{r functions}
+
+# Remove DST from date times. Input a string mm/dd/yyy hh:mm , and timezone
+Un_dst <- function(Dates, tz){ 
+  Dates %>% 
+    mutate(LDate=mdy_hms(paste(Date, Time), tz=tz)) %>% 
+    mutate(DST=dst(LDate)) %>% 
+    mutate(DST=dst(LDate) | dst(LDate-1)) %>% 
+    mutate(UDate=mdy_hms(paste(Date, Time), tz="UTC")) %>% 
+    group_by(Type, date(LDate)) %>% # this takes care of Fall transition day, almost
+       mutate(ToShift=duplicated(UDate, fromLast=TRUE)) %>% 
+    ungroup() %>% 
+    filter(!is.na(DST)) %>% 
+    mutate(NewDate=if_else(DST|ToShift, UDate-hours(1), UDate)) %>% 
+    select(-LDate, -DST, -ToShift, -UDate, -`date(LDate)`)
+}
 
 ```
 
@@ -23,10 +49,6 @@ path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
 ```{r read Tesla data}
 #| echo: true
  
-#   Time zone
-
-tz <- "America/Chicago"
-
 #   Read numbers downloaded from app (new system and old system)
 
 filenames <- list.files(path = path,
@@ -180,13 +202,14 @@ df2 <- df %>%
          Hour=`Delivery Hour`,
          Interval=`Delivery Interval`,
          Price=`Settlement Point Price`,
+         Repeat=`Repeated Hour Flag`,
          Name=`Settlement Point Name`)
 
 #   What are LZ and LZEW load zones for Houston? No f(*&ing idea.
 
 foo <- df2 %>% 
   mutate(Date=lubridate::mdy_hm(paste(Date,
-                                      as.character(Hour),
+                                      as.character(Hour-1),
                                       as.character((Interval-1)*15)))) %>% 
   pivot_wider(Date, names_from = "Name", values_from = "Price") %>% 
   rowwise() %>% 
@@ -196,15 +219,34 @@ foo <- df2 %>%
 #   Don't know the difference between LZ and LZEW load zones, so I will 
 #   average them since the differences are usually quite small
 
+#   Convert to UTC
+
+df3 <- df2 %>% 
+    mutate(LDate=lubridate::mdy_hm(paste0(Date, " ",
+                                      as.character(Hour-1), ":",
+                                      as.character((Interval-1)*15)),tz=tz)) %>% 
+    mutate(DST=dst(LDate)) %>% 
+    mutate(DST=dst(LDate) | dst(LDate-1)) %>% 
+    mutate(UDate=lubridate::mdy_hm(paste0(Date, " ",
+                                      as.character(Hour-1), ":",
+                                      as.character((Interval-1)*15)), tz="UTC")) %>% 
+    group_by(Name, date(LDate)) %>% # this takes care of Fall transition day, almost
+       mutate(ToShift=duplicated(UDate, fromLast=TRUE)) %>% 
+    ungroup() %>% 
+    filter(!is.na(DST)) %>% 
+    mutate(NewDate=if_else(DST|ToShift, UDate-hours(1), UDate)) #%>% 
+    select(-LDate, -DST, -ToShift, -UDate, -`date(LDate)`)
+
 df <- df2 %>% 
   mutate(Date=lubridate::mdy_hm(paste(Date,
                                       as.character(Hour),
-                                      as.character((Interval-1)*15)))) %>% 
+                                      as.character((Interval-1)*15)), tz="UTC")) %>% 
   pivot_wider(Date, names_from = "Name", values_from = "Price") %>% 
   rowwise() %>% 
   mutate(LZ1=unlist(LZ_HOUSTON)[1], LZ2=unlist(LZ_HOUSTON)[2], HUB=HB_HOUSTON[[1]]) %>% 
   mutate(Hub_price=HUB, LZ_price=mean(LZ1, LZ2)) %>% 
-  select(Date, Hub_price, LZ_price)
+  select(Date, Hub_price, LZ_price) %>% 
+  ungroup()
 
 #   Don't know why this helps, but it helps immensely - it's rowwise!!
 
@@ -221,12 +263,19 @@ df <- read_csv(paste0(path, "SmartMeter_IntervalData.csv"))
 df2 <- df %>% 
   select(USAGE_DATE, USAGE_START_TIME, USAGE_KWH, 
          CONSUMPTION_SURPLUSGENERATION) %>% 
-  mutate(USAGE_KWH=if_else(stringr::str_detect(CONSUMPTION_SURPLUSGENERATION,
-                                               "Surplus Generation"), 
-                           USAGE_KWH*-1,
-                           USAGE_KWH)) %>% 
-  mutate(Date=lubridate::mdy_hms(paste0(USAGE_DATE, USAGE_START_TIME))) %>% 
-  select(Date, Usage=USAGE_KWH)
+  rename(Type=CONSUMPTION_SURPLUSGENERATION, 
+         Date=USAGE_DATE, 
+         kWh=USAGE_KWH,
+         Time=USAGE_START_TIME)
+
+#   Convert to UTC
+
+df2 <- Un_dst(df2, tz)
+
+df2 <- df2 %>% 
+  pivot_wider(NewDate, names_from="Type", 
+              values_from="kWh") %>% 
+  select(Date=NewDate, Consumption, Generation=`Surplus Generation`) 
 
 Smart <- df2
 
@@ -235,6 +284,8 @@ Smart <- df2
 ## Read in the weather data (for IAH)
 
 ```{r IAH weather}
+
+#   Thankfully, weather data is reported in UTC, no daylight savings
 
 df <- read_csv(paste0(path, "WeatherData.csv"))
 
