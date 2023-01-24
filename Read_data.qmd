@@ -60,8 +60,8 @@ df <- filenames %>%
   purrr::map_dfr(read_csv, col_types="cccccc") 
 
 df <- df %>% 
-  mutate(Date=lubridate::ymd_hms(`Date time`, tz=tz)) %>% 
-  select(-`Date time`) %>% 
+  mutate(Date=lubridate::ymd_hms(`Date time`, tz="UTC")-hours(6)) %>% 
+  #select(-`Date time`) %>% 
   rename(Home=`Home (kW)`,
          Solar=`Solar (kW)`,
          Powerwall=`Powerwall (kW)`,
@@ -86,7 +86,7 @@ df <- filenames %>%
   purrr::map_dfr(read_csv, col_types="cc") 
 
 df <- df %>% 
-  mutate(Date=lubridate::ymd_hms(`Date time`, tz=tz)) %>% 
+  mutate(Date=lubridate::ymd_hms(`Date time`, tz="UTC")-hours(6)) %>% 
   select(-`Date time`) %>% 
   rename(
          Solar=`Solar (kW)`
@@ -104,13 +104,13 @@ App_old <- df
 
 df <- read_csv(paste0(path, "Susan_Tesla_Solar_1.csv"), col_types="cccccc") %>% 
   filter(Timestamp!="Timestamp") %>% 
-  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="America/Chicago"),
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
          Solar_W=as.numeric(Solar_kW)) %>% 
   select(Timestamp, Solar_W)
 
 df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_2.csv"), col_types="cccccc") %>% 
   filter(Timestamp!="Timestamp") %>% 
-  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
          Solar_W=as.numeric(Solar_kW)) %>% 
   select(Timestamp, Solar_W)
 
@@ -118,7 +118,7 @@ df <- rbind(df, df2)
 
 df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_3.csv"), col_types="cccccc") %>% 
   filter(Timestamp!="Timestamp") %>% 
-  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
          Solar_W=as.numeric(Solar_kW)) %>% 
   select(Timestamp, Solar_W)
 
@@ -126,7 +126,7 @@ df <- rbind(df, df2)
 
 df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_4.csv"), col_types="cccccc") %>% 
   filter(Timestamp!="Timestamp") %>% 
-  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
          Solar_W=as.numeric(Solar_kW)) %>% 
   select(Timestamp, Solar_W)
 
@@ -141,7 +141,7 @@ Solar_old <- df
 
 df <- read_csv(paste0(path, "Alan_Tesla_Solar_1.csv"), col_types="cccccc") %>% 
   filter(Timestamp!="Timestamp") %>% 
-  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
          Solar_W=as.numeric(Solar_kW),
          Battery_W=as.numeric(Battery_kW),
          Grid_W=as.numeric(Grid_kW)) %>% 
@@ -149,7 +149,7 @@ df <- read_csv(paste0(path, "Alan_Tesla_Solar_1.csv"), col_types="cccccc") %>%
 
 df2 <- read_csv(paste0(path, "Alan_Tesla_Solar_2.csv"), col_types="cccccc") %>% 
   filter(Timestamp!="Timestamp") %>% 
-  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz=tz),
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
          Solar_W=as.numeric(Solar_kW),
          Battery_W=as.numeric(Battery_kW),
          Grid_W=as.numeric(Grid_kW)) %>% 
