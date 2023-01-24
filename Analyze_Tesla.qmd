@@ -9,10 +9,7 @@ editor: visual
 
 The tesla data comes from several sources, so we will compare and contrast.
 
-We have the original solar panels, which are on one account, the new solar
-panels and batteries, on a different account, and for both we have data
-downloaded from the app as well as data downloaded with python code off
-the web.
+We have the original solar panels, which are on one account, the new solar panels and batteries, on a different account, and for both we have data downloaded from the app as well as data downloaded with python code off the web.
 
 ```{r init}
 #| echo: false
@@ -30,7 +27,7 @@ App_new <- readRDS(paste0(path, "App_new.rds"))
 
 ```
 
-##        Make some plots
+## Make some plots
 
 ```{r first plots}
 
@@ -159,7 +156,7 @@ foo %>%
 
 ```
 
-##        Calculate $ saved just for grins
+## Calculate \$ saved just for grins
 
 ```{r dollars}
 
@@ -221,10 +218,9 @@ Solar_old %>%
 
 ```
 
-##        Build daily models
+## Build daily models
 
-Build insolation models for each week of the year using the old data, and 
-capturing the max value in each 15 minute segment
+Build insolation models for each week of the year using the old data, and capturing the max value in each 15 minute segment
 
 ```{r isolation}
 
@@ -236,6 +232,7 @@ foo <- Solar_old %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125) %>% 
   group_by(Hour, Week) %>%
     summarize(Hour=last(Hour), Month=last(Month), DST=last(DST),
+    #summarize(Hour=last(Hour), Month=last(Month),
               Day=last(Day), Solar=max(Solar_W)) %>% 
   ungroup() %>% 
   mutate(PseudoDate=ymd_hm(paste0(paste("2000", Month, Day, sep = "-"),
@@ -292,8 +289,7 @@ foo %>%
 
 ```
 
-
-##  Fitting the max curves
+## Fitting the max curves
 
 ```{r curve fitting}
 
@@ -345,8 +341,7 @@ Old_data_sm <- foobar
 
 ```
 
-
-##        Multiplier from old panels to new panels
+## Multiplier from old panels to new panels
 
 Need to scale up the data to reflect the additional capacity
 
@@ -358,7 +353,7 @@ foo_old <- Solar_old %>%
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
-  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  # mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
   group_by(Month, Hour) %>%
     summarise(Max=max(Solar_W),
               std=sd(Solar_W)) %>% 
@@ -495,10 +490,10 @@ Sfit <- function(foobar){
 }
 ##################################  Sfit
 ```
-##  wrong way to do it
 
-Instead I need to build a transform to take old December to old "other month",
-and then use that transform on new December. It is mostly a time stretch.
+## wrong way to do it
+
+Instead I need to build a transform to take old December to old "other month", and then use that transform on new December. It is mostly a time stretch.
 
 ```{r transform}
 
@@ -508,7 +503,7 @@ Old_clean <- Solar_old %>% #    Clean up old data and calc Max values by time
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
-  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  # mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
   group_by(Month, Hour) %>%
     summarise(Max=max(Solar_W),
               std=sd(Solar_W))  
@@ -647,8 +642,7 @@ Jan_xform %>%
 
 ```
 
-
-##        Now do all the months
+## Now do all the months
 
 ```{r all xforms}
 
@@ -767,7 +761,7 @@ saveRDS(New_xform,(paste0(path, "MaxSolarByMonth.rds")))
 
 ```
 
-##        Let's look at the mean and minimum values    
+## Let's look at the mean and minimum values
 
 ```{r mean}
 
@@ -777,7 +771,7 @@ foo <- Solar_old %>%
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
-  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  # mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
   group_by(Month, Hour) %>%
     summarise(Max=max(Solar_W),
               Mean=mean(Solar_W),
@@ -811,7 +805,7 @@ Solar_old %>%
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
-  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  # mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
   mutate(MonthName=ordered(month.name[Month], levels=month.name)) %>% 
   filter(Hour>8 & Hour < 17) %>% 
   ggplot(aes(x=Solar_W, group=Month)) +
@@ -824,7 +818,7 @@ Solar_old %>%
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
-  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  # mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
   filter(Hour>8 & Hour < 17) %>% 
   left_join(., Old_stats, by=c("Hour", "Month")) %>% 
   mutate(Ratio=Solar_W/Fit_max) %>% 
@@ -834,7 +828,7 @@ Solar_old %>%
 
 ```
 
-#       Let's look at how to build insolation probability curves
+# Let's look at how to build insolation probability curves
 
 Want to have curves by Hour by Month
 
@@ -846,7 +840,7 @@ foo <- Solar_old %>%
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25 + 0.125,  
          Month=month(Timestamp), Day=day(Timestamp)) %>%
-  mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
+  # mutate(Hour=if_else(DST, Hour-1, Hour)) %>% 
   group_by(Month, Hour) %>%
     mutate(Max=max(Solar_W),
            Mean=mean(Solar_W),
@@ -885,7 +879,7 @@ foo %>%
        y="Hour of Day") 
 ```
 
-##        Build probability distributions of PctMax vs Hour and Month
+## Build probability distributions of PctMax vs Hour and Month
 
 ```{r PctMax}
 
@@ -951,10 +945,3 @@ saveRDS(output, paste0(path, "ICDF_Month_Hour_PctMax.rds"))
 
 
 ```
-
-
-
-
-
-
-
