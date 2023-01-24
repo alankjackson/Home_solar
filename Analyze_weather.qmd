@@ -7,7 +7,6 @@ editor: visual
 
 ## Read in and analyze weather data
 
-
 ```{r init}
 #| echo: false
 
@@ -22,7 +21,7 @@ Weather <- readRDS(paste0(path, "Weather.rds"))
 
 ```
 
-##    Put data on 15 minute intervals
+## Put data on 15 minute intervals
 
 ```{r interpolate}
 
@@ -64,7 +63,7 @@ Weather_trp %>%
 
 ```
 
-##        Cloudiness and Precip by week
+## Cloudiness and Precip by week
 
 ```{r cloudy}
 
@@ -86,8 +85,7 @@ Weather_trp %>%
        y="Octants Sky Covered by Cloud") 
 ```
 
-
-##        Do a quick look at correlations with solar output
+## Do a quick look at correlations with solar output
 
 ```{r solar}
 
@@ -175,16 +173,3 @@ foo %>%
     
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
