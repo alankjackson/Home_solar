@@ -28,35 +28,116 @@ Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
 
 Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
   filter(Solar_W<6000) %>% 
-  mutate(DST=dst(Timestamp)) %>% 
+  mutate(kWh=(0.25*(min(Solar_W, lag(Solar_W, default=0))) + 
+             0.125*(abs(Solar_W-lag(Solar_W, default=0))))/1000) %>% 
+  mutate(Solar_W=Solar_W/4) %>% 
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
-         Month=month(Timestamp), Day=day(Timestamp)) %>%
-  mutate(Hour=if_else(DST, Hour-1, Hour)) 
+         Month=month(Timestamp), Day=day(Timestamp)) 
 
-df <- df %>% filter(!is.na(Usage)) %>% 
+df2 <- df %>% 
+  mutate(Usage=Consumption - Generation) %>% 
+  filter(!is.na(Usage)) %>% 
   mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
 
 ```
 
-##        Clean up Weather data
+## Clean up Weather data
 
 All I need is temperature every 15 minutes
 
 ```{r weather}
+
 tz <- "America/Chicago"
 
-xout <- seq(mdy_hm("01-01-2021T00:00", tz=tz),
-            mdy_hm("12-31-2022T00:00", tz=tz),
+xout <- seq(mdy_hm("01-01-2021T00:00", tz="UTC"),
+            mdy_hm("12-31-2022T00:00", tz="UTC"),
             by=15*60)
 
-Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout)
+Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout, rule=2)
 
 Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x, 
                     Temperature=Weather_T$y))
 
 ```
 
+##        Combine Smartmeter and Solar to get Home
+
+Problems. Solar output is instantaneous, so it can be briefly shaded in any 15
+minute period leading to an anomalously small output value, but the smart meter
+data is the integrated kWh value.
+
+So drop any day with negative values for the Home, and apply a smoother to the
+rest?
+
+```{r make home}
+
+foo <- df2 %>% 
+  select(Date, Usage, Vacation, Generation, Consumption) %>% 
+  mutate(Date=Date+minutes(60)) %>%
+  inner_join(., Solar_old, by=c("Date"="Timestamp")) %>% 
+  select(Date, Usage, Generation, Consumption, Vacation, Solar_W, kWh, Hour, Month) %>% 
+  mutate(Home=kWh + Usage) %>% 
+  filter(Home<0) %>% 
+  group_by(Month) %>% 
+    tally()
+
+foo %>% 
+  ggplot(aes(x=Month, y=n))+
+  geom_point()
+
+df <- df2 %>% 
+  select(Date, Usage, Vacation, Generation, Consumption) %>% 
+  mutate(Date=Date+minutes(60)) %>%
+  inner_join(., Solar_old, by=c("Date"="Timestamp")) %>% 
+  select(Date, Usage, Generation, Consumption, Vacation, Solar_W, kWh, Hour, Month) %>% 
+  mutate(Home=kWh + Usage)  
+
+df %>% 
+  ggplot(aes(x=Solar_W, y=Usage)) +
+  geom_point(size=0.1)
+
+df %>% 
+  ggplot(aes(x=Date, y=Home)) +
+  geom_point(size=0.1) +
+  geom_smooth()
+
+df %>% 
+  filter(Date>mdy_hm("03-10-2021 00:00") & Date<mdy_hm("03-31-2021 00:00")) %>% 
+  ggplot(aes(x=Date, y=Home)) +
+  geom_point(size=0.1)
+
+df %>% 
+  filter(Date>mdy_hm("03-10-2021 00:00") & Date<mdy_hm("03-31-2021 00:00")) %>% 
+  ggplot(aes(x=Date, y=Home)) +
+  geom_point(size=0.1)+
+  geom_point(aes(y=Usage, color="red"), size=0.1)
+
+# Drop under zero days
+
+df2 <- df %>%
+  mutate(Day=date(Date)) %>% 
+  group_by(Day) %>% 
+     mutate(Zero=min(Home)) %>% 
+  ungroup() %>% 
+  filter(Zero>0) %>% 
+  select(-Zero, -Day)
+
+df2 %>% 
+  ggplot(aes(x=Date, y=Home)) +
+  geom_point(size=0.1) +
+  geom_smooth()
+
+foo <- df2 %>%
+  mutate(SmHome=runmed(Home, 5))
+
+foo %>% 
+  filter(Date>mdy_hm("03-10-2021 00:00") & Date<mdy_hm("03-31-2021 00:00")) %>% 
+  ggplot(aes(x=Date, y=Home)) +
+  geom_line()+
+  geom_line(aes(y=SmHome), color="red")
+
+```
 
 
 
@@ -68,3 +149,93 @@ Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x,
 
 
 
+
+
+
+
+
+
+
+---
+title: "Build Home Model" author: "Alan Jackson" format: html editor: visual
+---
+## Build a Home model
+Home will be a function of Temperature, vacation, and time of day
+```{r initialize}
+library(tidyverse)
+library(lubridate)
+library(scales)
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+tz <- "America/Chicago"
+df <- readRDS(paste0(path, "Smart.rds"))
+Vaca <- readRDS(paste0(path, "Vacation.rds"))
+Weather <- readRDS(paste0(path, "Weather.rds")) %>%
+  filter(Date>lubridate::mdy_hms("01-01-2021T00:00:00")) %>%
+  filter(!is.na(Temperature))
+Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
+Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
+  filter(Solar_W<6000) %>%
+  mutate(Solar_W=Solar_W/4) %>%
+  mutate(Date=date(Timestamp)) %>%
+  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,
+         Month=month(Timestamp), Day=day(Timestamp))
+df2 <- df %>%
+  mutate(Usage=Consumption - Generation) %>%
+  filter(!is.na(Usage)) %>%
+  mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
+```
+## Clean up Weather data
+All I need is temperature every 15 minutes
+```{r weather}
+tz <- "America/Chicago"
+xout <- seq(mdy_hm("01-01-2021T00:00", tz="UTC"),
+            mdy_hm("12-31-2022T00:00", tz="UTC"),
+            by=15*60)
+Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout, rule=2)
+Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x,
+                    Temperature=Weather_T$y))
+```
+##        Combine Smartmeter and Solar to get Home
+Problems. Solar output is instantaneous, so it can be briefly shaded in any 15
+minute period leading to an anomalously small output value, but the smart meter
+data is the integrated kWh value.
+So drop any day with negative values for the Home, and apply a smoother to the
+rest?
+```{r make home}
+foo <- df2 %>%
+  select(Date, Usage, Vacation, Generation, Consumption) %>%
+  mutate(Date=Date+minutes(60)) %>%
+  inner_join(., Solar_old, by=c("Date"="Timestamp")) %>%
+  select(Date, Usage, Generation, Consumption, Vacation, Solar_W, Hour, Month) %>%
+  mutate(Home=Solar_W*0.001 + Usage) %>%
+  filter(Home<0) %>%
+  group_by(Month) %>%
+    tally()
+foo %>%
+  ggplot(aes(x=Month, y=n))+
+  geom_point()
+df <- df2 %>%
+  select(Date, Usage, Vacation, Generation, Consumption) %>%
+  mutate(Date=Date+minutes(60)) %>%
+  inner_join(., Solar_old, by=c("Date"="Timestamp")) %>%
+  select(Date, Usage, Generation, Consumption, Vacation, Solar_W, Hour, Month) %>%
+  mutate(Home=Solar_W*0.001 + Usage)
+df %>%
+  ggplot(aes(x=Solar_W, y=Usage)) +
+  geom_point(size=0.1)
+df %>%
+  ggplot(aes(x=Date, y=Home)) +
+  geom_point(size=0.1) +
+  geom_smooth()
+df %>%
+  filter(Date>mdy_hm("03-10-2021 00:00") & Date<mdy_hm("03-31-2021 00:00")) %>%
+  ggplot(aes(x=Date, y=Home)) +
+  geom_point(size=0.1)
+df %>%
+  filter(Date>mdy_hm("03-10-2021 00:00") & Date<mdy_hm("03-31-2021 00:00")) %>%
+  ggplot(aes(x=Date, y=Home)) +
+  geom_point(size=0.1)+
+  geom_point(aes(y=Usage, color="red"), size=0.1)
+foo <- df %>%
+  filter(Date>mdy_hm("03-11-2021 00:00") & Date<mdy_hm("03-18-2021 00:00"))
+```
