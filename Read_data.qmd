@@ -122,6 +122,23 @@ df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_3.csv"), col_types="cccccc") %>%
          Solar_W=as.numeric(Solar_kW)) %>% 
   select(Timestamp, Solar_W)
 
+foo <- df2 %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
+         Solar_W=as.numeric(Solar_kW)) %>% 
+  select(Timestamp, Solar_kW) %>% 
+  filter(lag(Solar_kW)==0) %>% 
+  filter(Solar_kW>0) %>% 
+  mutate(OldTime=lag(Timestamp)) %>%
+  filter(Solar_kW<200) %>% 
+  mutate(Delta=Timestamp-OldTime-1440) %>% 
+  filter(abs(Delta)<120) %>% 
+  mutate(Sunrise=hour(Timestamp)*60 + minute(Timestamp))
+
+foo %>% 
+  ggplot(aes(x=Timestamp, y=Sunrise)) +
+  geom_line()
+
 df <- rbind(df, df2)
 
 df2 <- read_csv(paste0(path, "Susan_Tesla_Solar_4.csv"), col_types="cccccc") %>% 
@@ -156,6 +173,16 @@ df2 <- read_csv(paste0(path, "Alan_Tesla_Solar_2.csv"), col_types="cccccc") %>%
   select(Timestamp, Solar_W, Battery_W, Grid_W)
 
 df <- rbind(df, df2)
+
+df2 <- read_csv(paste0(path, "Alan_Tesla_Solar_3.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
+         Solar_W=as.numeric(Solar_kW),
+         Battery_W=as.numeric(Battery_kW),
+         Grid_W=as.numeric(Grid_kW)) %>% 
+  select(Timestamp, Solar_W, Battery_W, Grid_W)
+
+df <- rbind(df, df2) %>% distinct()
 
 Solar_new <- df
 
@@ -262,7 +289,38 @@ df2 <- df %>%
 
 #   Convert to UTC
 
-df2 <- Un_dst(df2, tz)
+df2 <- df2 %>% 
+  filter(!is.na(kWh)) %>% 
+  mutate(LDate=mdy_hms(paste(Date, Time), tz=tz)) %>% 
+  # filter((LDate>mdy_hm("03-11-2021 00:00", tz=tz) & 
+  #        LDate<mdy_hm("03-28-2021 00:00", tz=tz))|
+  #        (LDate>mdy_hm("11-03-2021 00:00", tz=tz)&
+  #        LDate<mdy_hm("11-12-2021 00:00", tz=tz)) 
+  #          ) %>%
+    mutate(DST=dst(LDate)) %>% 
+    mutate(DST=dst(LDate) | dst(LDate-1)) %>% 
+    mutate(UDate=mdy_hms(paste(Date, Time), tz="UTC")) %>% 
+    group_by(Type, date(LDate)) %>% # this takes care of Fall transition day, almost
+       mutate(ToShift=duplicated(UDate, fromLast=TRUE)) %>% 
+    ungroup() %>% 
+    filter(!is.na(DST)) %>% 
+    mutate(NewDate=if_else(DST|ToShift, UDate-hours(1), UDate)) %>% 
+    select(-LDate, -DST, -ToShift, -UDate, -`date(LDate)`)
+
+# foo <- df3 %>% 
+#   filter(Type=="Surplus Generation") %>% 
+#   filter(NewDate<mdy_hm("03-28-2021 00:00", tz="UTC")) %>% 
+#   filter(lag(kWh)==0) %>% 
+#   filter(kWh>0) %>% 
+#   mutate(OldTime=lag(Time)) %>%
+#   #filter(Solar_kW<200) %>% 
+#   mutate(Delta=Time-OldTime)  %>% 
+#   #filter(abs(Delta)<120) %>% 
+#   mutate(Sunrise=hour(NewDate) + minute(NewDate)/60)
+# 
+# foo %>% filter(Sunrise<9) %>% 
+#   ggplot(aes(x=NewDate, y=Sunrise)) +
+#   geom_point()
 
 df2 <- df2 %>% 
   pivot_wider(NewDate, names_from="Type", 
