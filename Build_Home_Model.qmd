@@ -25,15 +25,30 @@ Weather <- readRDS(paste0(path, "Weather.rds")) %>%
   filter(Date>lubridate::mdy_hms("01-01-2021T00:00:00")) %>% 
   filter(!is.na(Temperature))
 Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
+Solar_new <- readRDS(paste0(path, "Solar_new.rds"))
 
 Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
-  filter(Solar_W<6000) %>% 
-  mutate(kWh=(0.25*(min(Solar_W, lag(Solar_W, default=0))) + 
-             0.125*(abs(Solar_W-lag(Solar_W, default=0))))/1000) %>% 
-  mutate(Solar_W=Solar_W/4) %>% 
+  # filter(Solar_W<6000) %>% 
+  mutate(behind=lag(Solar_W, default=0)) %>% 
+  rowwise() %>% 
+  mutate(kWh=(0.25*(min(Solar_W, behind)) + 
+             0.125*(abs(Solar_W-behind)))/1000) %>% 
+  ungroup() %>% 
   mutate(Date=date(Timestamp)) %>%
   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
          Month=month(Timestamp), Day=day(Timestamp)) 
+
+Solar_new <- Solar_new %>% 
+  mutate(Hour=hour(Timestamp) + trunc(minute(Timestamp)/15)*0.25) %>% 
+  group_by(date(Timestamp), Hour) %>% #    Convert to 15 minute kWh
+    summarize(Timestamp=first(Timestamp),
+              SolarkWh=mean(Solar_W)/4000,
+              BatterykWh=mean(Battery_W)/4000,
+              GridkWh=mean(Grid_W)/4000) %>% 
+  ungroup() %>% 
+  select(-`date(Timestamp)`) %>% 
+  mutate(HomekWh = GridkWh + SolarkWh + BatterykWh)
+
 
 df2 <- df %>% 
   mutate(Usage=Consumption - Generation) %>% 
@@ -41,6 +56,26 @@ df2 <- df %>%
   mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
 
 ```
+
+```{r test section}
+
+foobar <- Solar_old %>% 
+  head(50) %>% 
+  # mutate(behind=lag(Solar_W)) %>% 
+  mutate(behind=lag(Solar_W, default=0)) %>% 
+  rowwise() %>% 
+  mutate(one=min(Solar_W, behind)) %>% 
+  mutate(two=abs(Solar_W-behind)) %>% 
+  mutate(kWh=(0.25*(min(Solar_W, behind)) + 
+             0.125*(abs(Solar_W-behind)))/1000) %>% 
+  ungroup()
+  
+
+
+
+```
+
+
 
 ## Clean up Weather data
 
@@ -74,7 +109,7 @@ rest?
 
 foo <- df2 %>% 
   select(Date, Usage, Vacation, Generation, Consumption) %>% 
-  mutate(Date=Date+minutes(60)) %>%
+  # mutate(Date=Date+minutes(60)) %>%
   inner_join(., Solar_old, by=c("Date"="Timestamp")) %>% 
   select(Date, Usage, Generation, Consumption, Vacation, Solar_W, kWh, Hour, Month) %>% 
   mutate(Home=kWh + Usage) %>% 
@@ -88,10 +123,37 @@ foo %>%
 
 df <- df2 %>% 
   select(Date, Usage, Vacation, Generation, Consumption) %>% 
-  mutate(Date=Date+minutes(60)) %>%
+  mutate(TDate=force_tz(Date, tz=tz)) %>% 
+  mutate(DST=dst(TDate)) %>% 
+  # mutate(Date=if_else(dst(TDate), Date+minutes(60), Date)) %>%
   inner_join(., Solar_old, by=c("Date"="Timestamp")) %>% 
   select(Date, Usage, Generation, Consumption, Vacation, Solar_W, kWh, Hour, Month) %>% 
   mutate(Home=kWh + Usage)  
+
+df3 <- df %>% 
+  filter(kWh>0, Generation>0) 
+  
+df %>% 
+  filter(kWh>0, Generation>0) %>%
+  ggplot(aes(x=Generation, y=kWh))+
+  geom_point(size=0.1)+
+  geom_smooth(method="lm") +
+  annotate("text",x=1,y=0.5,label=(paste0("slope==",coef(lm(df3$kWh~df3$Generation))[2])),parse=TRUE)+
+  annotate("text",x=1,y=0.45,label=(paste0("intercept==",coef(lm(df3$kWh~df3$Generation))[1])),parse=TRUE)
+  
+df %>% 
+  filter(kWh>0) %>% 
+  ggplot(aes(y=Home, x=kWh))+
+  geom_point(size=0.1)+
+  geom_smooth(method="lm") +
+  annotate("text",y=3.2,x=1,label=(paste0("slope==",coef(lm(df$Home~df$kWh))[2])),color="red",parse=TRUE)+
+  annotate("text",y=3,x=1,label=(paste0("intercept==",coef(lm(df$Home~df$kWh))[1])),color="red",parse=TRUE)
+
+df %>% 
+  filter(kWh>0, Generation>0) %>% 
+  ggplot(aes(x=Home))+
+  geom_histogram()
+  
 
 df %>% 
   ggplot(aes(x=Solar_W, y=Usage)) +
@@ -115,7 +177,7 @@ df %>%
 
 # Drop under zero days
 
-df2 <- df %>%
+dfz <- df %>%
   mutate(Day=date(Date)) %>% 
   group_by(Day) %>% 
      mutate(Zero=min(Home)) %>% 
@@ -123,12 +185,12 @@ df2 <- df %>%
   filter(Zero>0) %>% 
   select(-Zero, -Day)
 
-df2 %>% 
+dfz %>% 
   ggplot(aes(x=Date, y=Home)) +
   geom_point(size=0.1) +
   geom_smooth()
 
-foo <- df2 %>%
+foo <- dfz %>%
   mutate(SmHome=runmed(Home, 5))
 
 foo %>% 
@@ -139,6 +201,81 @@ foo %>%
 
 ```
 
+## New strategy
+
+Let's build full month averages by time interval for all the quantities, and
+then try subtracting...
+
+```{r month averages}
+library(DescTools)
+
+dfavg <- df %>% 
+  group_by(Month, Hour) %>% 
+     summarize(UsageA=mean(Usage, na.rm=TRUE),
+               UsageM=median(Usage, na.rm=TRUE),
+               UsageW=mean(Winsorize(Usage, na.rm=TRUE)),
+               kWhA=mean(kWh, na.rm=TRUE),
+               kWhM=median(kWh, na.rm=TRUE),
+               kWhW=mean(Winsorize(kWh, na.rm=TRUE)),
+               ConsumptionA=mean(Consumption, na.rm=TRUE),
+               ConsumptionM=median(Consumption, na.rm=TRUE),
+               ConsumptionW=mean(Winsorize(Consumption, na.rm=TRUE)),
+               GenerationA=mean(Generation, na.rm=TRUE),
+               GenerationM=median(Generation, na.rm=TRUE),
+               GenerationW=mean(Winsorize(Generation, na.rm=TRUE)),
+               .groups="drop"
+               ) %>% 
+  mutate(HomeA=kWhA+UsageA, HomeM=kWhM+UsageM, HomeW=kWhW+UsageW)# %>% 
+  filter(kWhM>0)
+  
+dfavg %>% 
+  filter(kWhA>0) %>% 
+  ggplot(aes(y=HomeA, x=kWhA))+
+  geom_point(size=0.1)+
+  geom_smooth(method="lm") +
+  annotate("text",y=1.1,x=0.5,label=(paste0("slope==",coef(lm(dfavg$HomeA~dfavg$kWhA))[2])),color="red",parse=TRUE)+
+  annotate("text",y=1.0,x=0.5,label=(paste0("intercept==",coef(lm(dfavg$HomeA~dfavg$kWhA))[1])),color="red",parse=TRUE)
+
+dfavg %>% 
+  filter(kWhM>0) %>% 
+  ggplot(aes(y=HomeM, x=kWhM))+
+  geom_point(size=0.1)+
+  geom_smooth(method="lm") +
+  annotate("text",y=1.1,x=0.5,label=(paste0("slope==",coef(lm(dfavg$HomeM~dfavg$kWhM))[2])),color="red",parse=TRUE)+
+  annotate("text",y=1.0,x=0.5,label=(paste0("intercept==",coef(lm(dfavg$HomeM~dfavg$kWhM))[1])),color="red",parse=TRUE)
+
+dfavg %>% 
+ # filter(kWhW>0) %>% 
+  ggplot(aes(y=HomeW, x=kWhW))+
+  geom_point(size=0.1)+
+  geom_smooth(method="lm") +
+  annotate("text",y=1.1,x=0.5,label=(paste0("slope==",coef(lm(dfavg$HomeW~dfavg$kWhW))[2])),color="red",parse=TRUE)+
+  annotate("text",y=1.0,x=0.5,label=(paste0("intercept==",coef(lm(dfavg$HomeW~dfavg$kWhW))[1])),color="red",parse=TRUE)
+  
+dfavg %>% 
+  mutate(DateTime=Month*24+Hour) %>% 
+  ggplot(aes(x=DateTime, y=HomeA))+
+  geom_line()+
+  geom_line(aes(y=HomeM), color="red")+
+  geom_line(aes(y=HomeW), color="blue")
+  
+dfavg %>% 
+  mutate(DateTime=Month*24+Hour) %>% 
+  ggplot(aes(x=DateTime, y=UsageA))+
+  geom_line()+
+  geom_line(aes(y=UsageM), color="red")+
+  geom_line(aes(y=UsageW), color="blue")
+
+  
+dfavg %>% 
+  mutate(DateTime=Month*24+Hour) %>% 
+  ggplot(aes(x=DateTime, y=ConsumptionA))+
+  geom_line()+
+  geom_line(aes(y=GenerationA), color="red") +
+  geom_line(aes(y=GenerationA+ConsumptionA), color="blue")
+
+
+```
 
 
 
@@ -239,3 +376,284 @@ df %>%
 foo <- df %>%
   filter(Date>mdy_hm("03-11-2021 00:00") & Date<mdy_hm("03-18-2021 00:00"))
 ```
+
+
+##  Okay, let's look at one day to see what we can do
+
+```{r one day}
+
+oneday <- "01-15-2023"
+
+df <- read_csv(paste0(path, "Smartmeter_DecJan2022-23.csv"))
+
+df2 <- df %>% 
+  select(USAGE_DATE, USAGE_START_TIME, USAGE_KWH, 
+         CONSUMPTION_SURPLUSGENERATION) %>% 
+  rename(Type=CONSUMPTION_SURPLUSGENERATION, 
+         Date=USAGE_DATE, 
+         kWh=USAGE_KWH,
+         Time=USAGE_START_TIME)
+
+#   Convert to UTC
+
+df2 <- df2 %>% 
+  filter(!is.na(kWh)) %>% 
+  mutate(LDate=mdy_hms(paste(Date, Time), tz=tz)) %>% 
+    mutate(DST=dst(LDate)) %>% 
+    mutate(DST=dst(LDate) | dst(LDate-1)) %>% 
+    mutate(UDate=mdy_hms(paste(Date, Time), tz="UTC")) %>% 
+    group_by(Type, date(LDate)) %>% # this takes care of Fall transition day, almost
+       mutate(ToShift=duplicated(UDate, fromLast=TRUE)) %>% 
+    ungroup() %>% 
+    filter(!is.na(DST)) %>% 
+    mutate(NewDate=if_else(DST|ToShift, UDate-hours(1), UDate)) %>% 
+    select(-LDate, -DST, -ToShift, -UDate, -`date(LDate)`)
+
+df2 <- df2 %>% 
+  pivot_wider(NewDate, names_from="Type", 
+              values_from="kWh") %>% 
+  select(Date=NewDate, Consumption, Generation=`Surplus Generation`) %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25)  
+  # mutate(Hour=hour(Date) + minute(Date)/15*0.25)  
+
+df2 %>% 
+  filter(date(Date)==mdy(oneday)) %>% 
+  ggplot(aes(x=Date, y=Consumption))+
+  geom_line()+
+  geom_line(aes(y=Generation), color="red") +
+  labs(title="Jan 15 data, Consumption and Generation, Smartmeter data")
+
+#   Tesla data
+
+df <- read_csv(paste0(path, "thursJan26.csv"), col_types="cccccc") %>% 
+  mutate(Date=lubridate::ymd_hms(`Date time`, tz="UTC")-hours(6)) %>% 
+  rename(Home=`Home (kW)`,
+         Solar=`Solar (kW)`,
+         Powerwall=`Powerwall (kW)`,
+         Grid=`Grid (kW)` ) %>% 
+  mutate(Home=as.numeric(Home),
+         Solar=as.numeric(Solar),
+         Powerwall=as.numeric(Powerwall),
+         Grid=as.numeric(Grid)) %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>% 
+  group_by(Hour) %>% #    Convert to 15 minute kWh
+    summarize(SolarkWh=mean(Solar)/4,
+              HomekWh=mean(Home)/4,
+              PowerkWh=mean(Powerwall)/4,
+              GridkWh=mean(Grid)/4)
+
+df %>% 
+  ggplot(aes(x=Hour, y=HomekWh)) +
+  geom_line()+
+  geom_line(aes(y=SolarkWh), color="red")+
+  labs(title="Jan 26 data, Consumption and Generation, Tesla App data")
+
+#   Combine
+
+#foo <- 
+  df2 %>% 
+  filter(date(Date)==mdy(oneday)) %>% 
+  left_join(., df, by="Hour") %>% 
+  mutate(GenDiff = SolarkWh - HomekWh - Generation + PowerkWh) %>% 
+  mutate(HomeDiff = HomekWh - Consumption) %>% 
+  mutate(UsageDiff = Consumption - Generation - HomekWh + SolarkWh + PowerkWh) %>% 
+  mutate(UsageMeter = Consumption - Generation, UsageHome = HomekWh - SolarkWh - PowerkWh) %>% 
+    select(Hour, Date, Consumption, Generation, UsageMeter, UsageHome, SolarkWh) %>% 
+    select(-Date) %>% 
+  pivot_longer(!Hour, names_to = "Calculation", values_to="Values") %>% 
+  ggplot(aes(x=Hour)) +
+  geom_line(aes(y=Values, color=Calculation))+
+  labs(title="Jan 15 data, Consumption and Generation, Smartmeter data")
+
+
+  #   Same thing with python file
+ # foo <- Solar_new %>% filter(date(Timestamp)==mdy(oneday))
+ foo <- Solar_new %>% filter(month(Timestamp)==1)
+ foo2 <- df2 %>% filter(date(Date)==mdy(oneday))
+  
+  df2 %>% 
+  # filter(date(Date)==mdy(oneday)) %>%
+  filter(month(Date)==1) %>%
+  # left_join(. ,foo , by="Hour") %>%
+  left_join(. ,foo , by=c("Date"="Timestamp")) %>%
+  mutate(GenDiff = SolarkWh - HomekWh - Generation + BatterykWh) %>% 
+  mutate(HomeDiff = HomekWh - Consumption - BatterykWh) %>% 
+  mutate(UsageDiff = Consumption - Generation - HomekWh + SolarkWh + BatterykWh) %>% 
+  mutate(UsageMeter = Consumption - Generation, UsageHome = HomekWh - SolarkWh - BatterykWh) %>% 
+  mutate(HomeAll = Consumption - Generation + SolarkWh + BatterykWh) %>% 
+    # select(Hour, Date, Consumption, Generation, UsageMeter, UsageHome, SolarkWh) %>% 
+    # select(Hour, UsageHome, SolarkWh, UsageDiff, HomeDiff, GenDiff, UsageMeter, HomeAll) %>%
+    # select(Hour, UsageHome, UsageDiff, UsageMeter, HomeAll) %>%
+    # select(Date, UsageHome, UsageDiff, UsageMeter, HomeAll) %>%
+    select(Date, HomeAll) %>%
+    # select(-Date) %>% 
+  # pivot_longer(!Hour, names_to = "Calculation", values_to="Values") %>%
+  pivot_longer(!Date, names_to = "Calculation", values_to="Values") %>%
+  # ggplot(aes(x=Hour)) +
+  ggplot(aes(x=Date)) +
+  geom_line(aes(y=Values, color=Calculation))+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage")
+
+  df2 %>% 
+  filter(month(Date)==1) %>%
+  left_join(. ,foo , by=c("Date"="Timestamp")) %>%
+  mutate(HomeAll = Consumption - Generation + SolarkWh + BatterykWh) %>% 
+    select(Date, HomeAll) %>%
+  # pivot_longer(!Date, names_to = "Calculation", values_to="Values") %>%
+  ggplot(aes(x=HomeAll)) +
+  geom_histogram(bins=80)+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage")
+  
+  foo2 <- df2 %>% 
+  filter(month(Date)==1) %>%
+  left_join(. ,foo , by=c("Date"="Timestamp")) %>%
+  mutate(HomeAll = Consumption - Generation + SolarkWh + BatterykWh) %>% 
+    select(Date, HomeAll) %>% 
+    filter(!is.na(HomeAll))
+  
+  km <- kmeans(foo2$HomeAll, centers = 4)
+foo2$km <- as.character(km$cluster)
+
+ggplot(foo2, aes(x = HomeAll, fill = km)) +
+  geom_histogram(bins = 120)+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage, kmeans cluster")
+  
+
+#     Calculate loads for base, afternoon, a/c, and cars
+
+#     For base look at 1 AM - 6 AM, 9 PM - 12 PM
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>1 & Hour < 6) | (Hour>21 & Hour<24)) %>% 
+  filter(HomeAll<1) %>% 
+  ggplot(aes(x=Hour, y=HomeAll)) +
+  geom_point()+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage, Nighttime")
+  
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>1 & Hour < 6) | (Hour>21 & Hour<24)) %>% 
+  filter(HomeAll<1) %>% 
+  summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll))
+
+#   Base daylight
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(Hour>6 & Hour < 14) %>% 
+  filter(HomeAll<1) %>% 
+  ggplot(aes(x=Hour, y=HomeAll)) +
+  geom_point()+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage, Daytime")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(Hour>6 & Hour < 14) %>% 
+  filter(HomeAll<1) %>% 
+  summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll))
+
+#   Base afternoon
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(Hour>16 & Hour < 19) %>% 
+  filter(HomeAll<1) %>% 
+  ggplot(aes(x=Hour, y=HomeAll)) +
+  geom_point()+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage, Afternoon")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(Hour>16 & Hour < 19) %>% 
+  filter(HomeAll<1) %>% 
+  summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll))
+  
+#   A/C
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+ # filter(Hour>16 & Hour < 19) %>% 
+  filter(HomeAll>1.9) %>%
+  filter(HomeAll<2.2) %>%
+  ggplot(aes(x=Hour, y=HomeAll)) +
+  geom_point()+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage, A/C")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(HomeAll>1.9) %>%
+  filter(HomeAll<2.2) %>%
+  summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll))
+  
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(HomeAll>1.9) %>%
+  filter(HomeAll<2.2) %>%
+  mutate(Dt=Hour-lag(Hour)) %>% 
+  filter(Dt>0) %>% 
+  ggplot(aes(x=Dt)) +
+  geom_histogram()
+
+#   Tesla
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(Hour < 3) %>% 
+  filter(HomeAll>3) %>%
+  ggplot(aes(x=Hour, y=HomeAll)) +
+  geom_point()+
+  labs(title="Jan data, Smartmeter data + Python data, Home Usage, Tesla")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(Hour < 3) %>% 
+  filter(HomeAll>3) %>%
+  summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll))
+
+
+```
+
+##      Now use old python data
+
+```{r repeat with old data}
+
+# df <- read_csv(paste0(path, "Smartmeter_DecJan2022-23.csv"))
+
+Smart <- readRDS(paste0(path, "Smart.rds")) %>% 
+  filter(Date<mdy_hm("10-31-2022 00:00"))  
+
+Tesla <- Solar_old %>% 
+  filter(Timestamp>mdy_hm("1-1-2021 00:00")) %>% 
+  filter(Timestamp<mdy_hm("10-31-2022 00:00"))  
+  
+Smart %>% 
+  left_join(. ,Tesla , by=c("Date"="Timestamp")) %>%
+  mutate(UsageMeter = Consumption - Generation) %>% 
+  mutate(HomeAll = Consumption - Generation + kWh) %>% 
+    select(Date, HomeAll, Consumption, Generation, kWh, UsageMeter) %>%
+  head(100) %>% 
+  pivot_longer(!Date, names_to = "Calculation", values_to="Values") %>%
+  ggplot(aes(x=Date)) +
+  geom_line(aes(y=Values, color=Calculation))+
+  labs(title="Smartmeter data + Python data, Home Usage")
+
+  # df2 %>% 
+  # filter(month(Date)==1) %>%
+  # left_join(. ,foo , by=c("Date"="Timestamp")) %>%
+  # mutate(HomeAll = Consumption - Generation + SolarkWh + BatterykWh) %>% 
+  #   select(Date, HomeAll) %>%
+  # # pivot_longer(!Date, names_to = "Calculation", values_to="Values") %>%
+  # ggplot(aes(x=HomeAll)) +
+  # geom_histogram(bins=80)+
+  # labs(title="Jan data, Smartmeter data + Python data, Home Usage")
+
+
+
+```
+
+
+
+
+
+
