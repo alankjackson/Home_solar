@@ -31,12 +31,13 @@ Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
   # filter(Solar_W<6000) %>% 
   mutate(behind=lag(Solar_W, default=0)) %>% 
   rowwise() %>% 
-  mutate(kWh=(0.25*(min(Solar_W, behind)) + 
-             0.125*(abs(Solar_W-behind)))/1000) %>% 
+    mutate(kWh=mean(Solar_W, behind)/4000) %>% 
+  # mutate(kWh=(0.25*(min(Solar_W, behind)) + 
+  #            0.125*(abs(Solar_W-behind)))/1000) %>% 
   ungroup() %>% 
   mutate(Date=date(Timestamp)) %>%
-  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,  
-         Month=month(Timestamp), Day=day(Timestamp)) 
+  mutate(Hour=hour(Timestamp) + trunc(minute(Timestamp)/15)*0.25) %>% 
+  mutate(Month=month(Timestamp), Day=day(Timestamp)) 
 
 Solar_new <- Solar_new %>% 
   mutate(Hour=hour(Timestamp) + trunc(minute(Timestamp)/15)*0.25) %>% 
@@ -618,40 +619,153 @@ foo2 %>%
 
 ```{r repeat with old data}
 
-# df <- read_csv(paste0(path, "Smartmeter_DecJan2022-23.csv"))
-
 Smart <- readRDS(paste0(path, "Smart.rds")) %>% 
-  filter(Date<mdy_hm("10-31-2022 00:00"))  
+  filter(Date<mdy_hm("9-30-2022 00:00"))  
 
 Tesla <- Solar_old %>% 
   filter(Timestamp>mdy_hm("1-1-2021 00:00")) %>% 
-  filter(Timestamp<mdy_hm("10-31-2022 00:00"))  
+  filter(Timestamp<mdy_hm("9-30-2022 00:00"))  
   
 Smart %>% 
   left_join(. ,Tesla , by=c("Date"="Timestamp")) %>%
+  # filter(Date>mdy_hm("11-1-2021 00:00")) %>% 
+  # filter(Date<mdy_hm("11-30-2021 00:00")) %>%   
   mutate(UsageMeter = Consumption - Generation) %>% 
   mutate(HomeAll = Consumption - Generation + kWh) %>% 
-    select(Date, HomeAll, Consumption, Generation, kWh, UsageMeter) %>%
-  head(100) %>% 
+  mutate(GenVsSolar = Generation - kWh) %>% 
+    # select(Date, HomeAll, Consumption, Generation, kWh, UsageMeter) %>%
+    select(Date, HomeAll) %>%
+    # select(Date, GenVsSolar, Generation, kWh) %>%
+  filter(HomeAll<2.8) %>% 
+  # head(1000) %>% 
   pivot_longer(!Date, names_to = "Calculation", values_to="Values") %>%
   ggplot(aes(x=Date)) +
-  geom_line(aes(y=Values, color=Calculation))+
+  # geom_line(aes(y=Values, color=Calculation))+
+  geom_point(aes(y=Values, color=Calculation), size=0.1)+
   labs(title="Smartmeter data + Python data, Home Usage")
 
-  # df2 %>% 
-  # filter(month(Date)==1) %>%
-  # left_join(. ,foo , by=c("Date"="Timestamp")) %>%
-  # mutate(HomeAll = Consumption - Generation + SolarkWh + BatterykWh) %>% 
-  #   select(Date, HomeAll) %>%
-  # # pivot_longer(!Date, names_to = "Calculation", values_to="Values") %>%
-  # ggplot(aes(x=HomeAll)) +
-  # geom_histogram(bins=80)+
-  # labs(title="Jan data, Smartmeter data + Python data, Home Usage")
+foo2 <-  Smart %>% 
+  left_join(. ,Tesla , by=c("Date"="Timestamp")) %>%
+  mutate(UsageMeter = Consumption - Generation) %>% 
+  mutate(HomeAll = Consumption - Generation + kWh) %>% 
+  mutate(GenVsSolar = Generation - kWh) %>% 
+  select(Date, HomeAll, Consumption, Generation, kWh, UsageMeter, GenVsSolar,
+         Hour, Month, Day) %>% 
+  mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE)) %>% 
+  filter(!is.na(Hour)) %>% 
+  left_join(., Weather_trp, by="Date")
 
+#     For base look at 1 AM - 6 AM, 9 PM - 12 PM
 
+foo2 %>% 
+  filter((Hour>1 & Hour < 6) | (Hour>21 & Hour<24)) %>% 
+  filter(HomeAll<1) %>% 
+  filter(HomeAll>0.01) %>% 
+  # filter(Vacation) %>% 
+  ggplot(aes(x=Hour, y=HomeAll, color=Vacation)) +
+  geom_point(size=0.1)+
+  geom_hline(yintercept=0.33) +
+  facet_wrap(vars(Month), nrow=3) +
+  labs(title="Smartmeter data + Python data, Home Usage, Nighttime, No Vaca")
+
+foo2 %>% 
+  # filter((Hour>1 & Hour < 6)) %>% 
+  # filter(HomeAll<1) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(Month==11) %>%
+  # filter(between(Day, 8, 15)) %>% 
+  # filter(!Vacation) %>% 
+  ggplot(aes(x=Date, y=HomeAll, color=Vacation)) +
+  geom_point(size=0.05)+
+  geom_hline(yintercept=0.33) +
+  labs(title="Smartmeter data + Python data, Home Usage, Nighttime, No Vaca")
+
+library(gt)
+  
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>1 & Hour < 6) | (Hour>21 & Hour<24)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=month.abb[Month]) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  gt(groupname_col = "Vaca") %>% 
+  fmt_number(
+    columns = c(Mean, Std),
+    decimals=3
+  ) %>% 
+  cols_label(
+    Monname = "Month"
+  ) %>% 
+  tab_options(
+    column_labels.border.top.width = px(3),
+    column_labels.border.top.color = "transparent",
+    table.border.top.color = "transparent",
+    table.border.bottom.color = "transparent",
+    data_row.padding = px(3),
+    source_notes.font.size = 12,
+    heading.align = "left",
+    #Adjust grouped rows to make them stand out
+    row_group.background.color = "grey")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>1 & Hour < 6) | (Hour>21 & Hour<24)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=factor(month.abb[Month], levels=month.abb)) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  ggplot(aes(x=Monname, y=Mean, group=Vaca, color=Vaca))+
+  geom_point()+
+  geom_smooth()
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>1 & Hour < 6) | (Hour>21 & Hour<24)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  # group_by(Month, Vacation) %>% 
+  #   summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  # ungroup() %>% 
+  # mutate(Monname=factor(month.abb[Month], levels=month.abb)) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(HomeAll, Vaca, Temperature) %>%
+  ggplot(aes(x=Temperature, y=HomeAll, group=Vaca, color=Vaca))+
+  geom_point()+
+  geom_smooth()
+  
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>1 & Hour < 6) | (Hour>21 & Hour<24)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=month.abb[Month]) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  pivot_wider(Monname, names_from="Vaca", values_from="Mean") %>% 
+  mutate(Diff=`At Home` - `On Vacation`)
 
 ```
 
+##        Daytime 06:00 to 14:00
+
+```{r daytime}
+
+```
 
 
 
