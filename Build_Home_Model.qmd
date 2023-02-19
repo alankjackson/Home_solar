@@ -14,6 +14,7 @@ Home will be a function of Temperature, vacation, and time of day
 library(tidyverse)
 library(lubridate)
 library(scales)
+library(gt)
 
 path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
 
@@ -227,7 +228,7 @@ dfavg <- df %>%
                .groups="drop"
                ) %>% 
   mutate(HomeA=kWhA+UsageA, HomeM=kWhM+UsageM, HomeW=kWhW+UsageW)# %>% 
-  filter(kWhM>0)
+  # filter(kWhM>0)
   
 dfavg %>% 
   filter(kWhA>0) %>% 
@@ -765,7 +766,209 @@ foo2 %>%
 
 ```{r daytime}
 
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>5 & Hour < 14)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=month.abb[Month]) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  gt(groupname_col = "Vaca") %>% 
+  fmt_number(
+    columns = c(Mean, Std),
+    decimals=3
+  ) %>% 
+  cols_label(
+    Monname = "Month"
+  ) %>% 
+  tab_options(
+    column_labels.border.top.width = px(3),
+    column_labels.border.top.color = "transparent",
+    table.border.top.color = "transparent",
+    table.border.bottom.color = "transparent",
+    data_row.padding = px(3),
+    source_notes.font.size = 12,
+    heading.align = "left",
+    #Adjust grouped rows to make them stand out
+    row_group.background.color = "grey")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>5 & Hour < 14)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=factor(month.abb[Month], levels=month.abb)) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  ggplot(aes(x=Monname, y=Mean, group=Vaca, color=Vaca))+
+  geom_point()+
+  geom_smooth()
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>5 & Hour < 14)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  # group_by(Month, Vacation) %>% 
+  #   summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  # ungroup() %>% 
+  # mutate(Monname=factor(month.abb[Month], levels=month.abb)) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(HomeAll, Vaca, Temperature) %>%
+  ggplot(aes(x=Temperature, y=HomeAll, group=Vaca, color=Vaca))+
+  geom_point()+
+  geom_smooth()
+  
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>5 & Hour < 14)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=month.abb[Month]) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  pivot_wider(Monname, names_from="Vaca", values_from="Mean") %>% 
+  mutate(Diff=`At Home` - `On Vacation`)
+
 ```
+
+
+##        afternoon 14:00 to 21:00
+
+```{r afternoon}
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>13 & Hour < 22)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=month.abb[Month]) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  gt(groupname_col = "Vaca") %>% 
+  fmt_number(
+    columns = c(Mean, Std),
+    decimals=3
+  ) %>% 
+  cols_label(
+    Monname = "Month"
+  ) %>% 
+  tab_options(
+    column_labels.border.top.width = px(3),
+    column_labels.border.top.color = "transparent",
+    table.border.top.color = "transparent",
+    table.border.bottom.color = "transparent",
+    data_row.padding = px(3),
+    source_notes.font.size = 12,
+    heading.align = "left",
+    #Adjust grouped rows to make them stand out
+    row_group.background.color = "grey")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>13 & Hour < 22)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=factor(month.abb[Month], levels=month.abb)) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  ggplot(aes(x=Monname, y=Mean, group=Vaca, color=Vaca))+
+  geom_point()+
+  geom_smooth()
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>13 & Hour < 22)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  # group_by(Month, Vacation) %>% 
+  #   summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  # ungroup() %>% 
+  # mutate(Monname=factor(month.abb[Month], levels=month.abb)) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(HomeAll, Vaca, Temperature) %>%
+  ggplot(aes(x=Temperature, y=HomeAll, group=Vaca, color=Vaca))+
+  geom_point()+
+  geom_smooth()
+  
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter((Hour>13 & Hour < 22)) %>% 
+  filter(HomeAll>0.01) %>% 
+  filter(HomeAll<0.33) %>% # picked based on new data 
+  group_by(Month, Vacation) %>% 
+    summarize(Median= median(HomeAll), Mean=mean(HomeAll), Std=sd(HomeAll)) %>% 
+  ungroup() %>% 
+  arrange(Vacation) %>% 
+  mutate(Monname=month.abb[Month]) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(Monname, Mean, Std, Vaca) %>% 
+  pivot_wider(Monname, names_from="Vaca", values_from="Mean") %>% 
+  mutate(Diff=`At Home` - `On Vacation`)
+
+```
+
+##        HVAC
+
+Need to come with hours per day active as a function of temperature and vacation
+as well as the kWh when active. Both for heating and cooling.
+
+```{r HVAC}
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(HomeAll>0.25) %>% 
+  filter(HomeAll<2.0) %>% # picked based on new data 
+  filter(Temperature>70) %>% 
+  mutate(Vaca=if_else(Vacation, "On Vacation", "At Home")) %>% 
+  select(HomeAll, Vaca, Temperature) %>%
+  ggplot(aes(x=Temperature, y=HomeAll, group=Vaca, color=Vaca))+
+  geom_point()+
+  geom_smooth(method="lm", color="black")
+
+foo2 %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) %>%
+  filter(HomeAll>0.25) %>% 
+  filter(HomeAll<2.0) %>% # picked based on new data 
+  filter(Temperature>75) %>% 
+  filter(Hour < 10) %>% 
+  filter(Vacation!="On Vacation") %>% 
+  select(HomeAll, Temperature) %>%
+  ggplot(aes(x=Temperature, y=HomeAll))+
+  geom_point(size=0.05)+
+  geom_smooth(method="lm", color="black")
+
+
+
+
+```
+
+
+
+
+
+
 
 
 
