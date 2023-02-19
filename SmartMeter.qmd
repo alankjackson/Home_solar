@@ -25,7 +25,7 @@ df <- df %>% filter(!is.na(Usage))
 
 ```
 
-##      Let's look at surplus generation statistics
+## Let's look at surplus generation statistics
 
 ```{r surplus}
 
@@ -77,10 +77,7 @@ df %>%
   
 ```
 
-
-
-
-##      Let's look at consumption statistics
+## Let's look at consumption statistics
 
 ```{r surplus}
 
@@ -132,7 +129,7 @@ df %>%
   
 ```
 
-##        Attach vacation dates and analyze separately
+## Attach vacation dates and analyze separately
 
 ```{r vaca}
 
@@ -200,7 +197,7 @@ daily %>%
 
 ```
 
-##        Pre-construction figures
+## Pre-construction figures
 
 ```{r preconstruction}
 
@@ -224,7 +221,7 @@ daily %>%
 
 ```
 
-##        Correlations
+## Correlations
 
 ```{r correlations}
 
@@ -239,16 +236,3 @@ daily %>%
 
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
