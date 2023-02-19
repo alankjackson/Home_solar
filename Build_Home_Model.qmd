@@ -31,6 +31,7 @@ Solar_new <- readRDS(paste0(path, "Solar_new.rds"))
 Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
   # filter(Solar_W<6000) %>% 
   mutate(behind=lag(Solar_W, default=0)) %>% 
+  mutate(kW = Solar_W/1000) %>% 
   rowwise() %>% 
     mutate(kWh=mean(Solar_W, behind)/4000) %>% 
   # mutate(kWh=(0.25*(min(Solar_W, behind)) + 
@@ -40,16 +41,21 @@ Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
   mutate(Hour=hour(Timestamp) + trunc(minute(Timestamp)/15)*0.25) %>% 
   mutate(Month=month(Timestamp), Day=day(Timestamp)) 
 
+
 Solar_new <- Solar_new %>% 
   mutate(Hour=hour(Timestamp) + trunc(minute(Timestamp)/15)*0.25) %>% 
   group_by(date(Timestamp), Hour) %>% #    Convert to 15 minute kWh
     summarize(Timestamp=first(Timestamp),
-              SolarkWh=mean(Solar_W)/4000,
-              BatterykWh=mean(Battery_W)/4000,
-              GridkWh=mean(Grid_W)/4000) %>% 
+              SolarkWh=mean(Solar_W)/1000,
+              SolarkW=sum(Solar_W)/1000,
+              BatterykWh=mean(Battery_W)/1000,
+              BatterykW=sum(Battery_W)/1000,
+              GridkWh=mean(Grid_W)/1000,
+              GridkW=sum(Grid_W)/1000) %>% 
   ungroup() %>% 
   select(-`date(Timestamp)`) %>% 
-  mutate(HomekWh = GridkWh + SolarkWh + BatterykWh)
+  mutate(HomekWh = GridkWh + SolarkWh + BatterykWh) %>% 
+  mutate(HomekW = GridkW + SolarkW + BatterykW)
 
 
 df2 <- df %>% 
@@ -58,26 +64,6 @@ df2 <- df %>%
   mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
 
 ```
-
-```{r test section}
-
-foobar <- Solar_old %>% 
-  head(50) %>% 
-  # mutate(behind=lag(Solar_W)) %>% 
-  mutate(behind=lag(Solar_W, default=0)) %>% 
-  rowwise() %>% 
-  mutate(one=min(Solar_W, behind)) %>% 
-  mutate(two=abs(Solar_W-behind)) %>% 
-  mutate(kWh=(0.25*(min(Solar_W, behind)) + 
-             0.125*(abs(Solar_W-behind)))/1000) %>% 
-  ungroup()
-  
-
-
-
-```
-
-
 
 ## Clean up Weather data
 
@@ -301,27 +287,28 @@ title: "Build Home Model" author: "Alan Jackson" format: html editor: visual
 ## Build a Home model
 Home will be a function of Temperature, vacation, and time of day
 ```{r initialize}
-library(tidyverse)
-library(lubridate)
-library(scales)
-path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
-tz <- "America/Chicago"
-df <- readRDS(paste0(path, "Smart.rds"))
-Vaca <- readRDS(paste0(path, "Vacation.rds"))
-Weather <- readRDS(paste0(path, "Weather.rds")) %>%
-  filter(Date>lubridate::mdy_hms("01-01-2021T00:00:00")) %>%
-  filter(!is.na(Temperature))
-Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
-Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
-  filter(Solar_W<6000) %>%
-  mutate(Solar_W=Solar_W/4) %>%
-  mutate(Date=date(Timestamp)) %>%
-  mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,
-         Month=month(Timestamp), Day=day(Timestamp))
-df2 <- df %>%
-  mutate(Usage=Consumption - Generation) %>%
-  filter(!is.na(Usage)) %>%
-  mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
+# library(scales)
+# path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+# tz <- "America/Chicago"
+# df <- readRDS(paste0(path, "Smart.rds"))
+# Vaca <- readRDS(paste0(path, "Vacation.rds"))
+# Weather <- readRDS(paste0(path, "Weather.rds")) %>%
+#   filter(Date>lubridate::mdy_hms("01-01-2021T00:00:00")) %>%
+#   filter(!is.na(Temperature))
+
+# Solar_old <- readRDS(paste0(path, "Solar_old.rds"))
+# Solar_old <- Solar_old %>% #    Clean up old data and calc Max values by time
+#   filter(Solar_W<6000) %>%
+#   mutate(Solar_W=Solar_W/4) %>%
+#   mutate(Date=date(Timestamp)) %>%
+#   mutate(Hour=hour(Timestamp) + minute(Timestamp)/15*0.25,
+#          Month=month(Timestamp), Day=day(Timestamp)) 
+
+
+# df2 <- df %>%
+#   mutate(Usage=Consumption - Generation) %>%
+#   filter(!is.na(Usage)) %>%
+#   mutate(Vacation=if_else(lubridate::as_date(Date) %in% Vaca, TRUE, FALSE))
 ```
 ## Clean up Weather data
 All I need is temperature every 15 minutes
@@ -958,6 +945,99 @@ foo2 %>%
   ggplot(aes(x=Temperature, y=HomeAll))+
   geom_point(size=0.05)+
   geom_smooth(method="lm", color="black")
+
+Solar_new_all <- readRDS(paste0(path, "Solar_new.rds")) %>% 
+  mutate(Hour=hour(Timestamp) + trunc(minute(Timestamp)/5)/12) %>% 
+  group_by(date(Timestamp), Hour) %>% #    Convert to 15 minute kWh
+    summarize(Timestamp=first(Timestamp),
+              SolarkWh=mean(Solar_W)/1000,
+              BatterykWh=mean(Battery_W)/1000,
+              GridkWh=mean(Grid_W)/1000) %>% 
+  ungroup() %>% 
+  select(-`date(Timestamp)`) %>% 
+  mutate(HomekWh = GridkWh + SolarkWh + BatterykWh)
+
+Solar_new_all %>% 
+  filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point()+
+  geom_line()
+  
+Solar_new_all %>% 
+  filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+  filter(Hour>.1 & Hour<1.4) %>% 
+  # summarize(Answer=mean(HomekWh))
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point()+
+  geom_line()
+
+Solar_new_all %>% 
+  filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+  mutate(Med=zoo::rollmedian(HomekWh, k=7, fill=c(0,0,0))) %>% 
+  filter(Hour>1.5) %>% 
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point()+
+  geom_line(aes(y=Med))+
+  geom_smooth(aes(y=Med))
+
+Solar_new_all %>% 
+  filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+  filter(Hour>1.0) %>%
+  filter(HomekWh<1.5) %>% 
+  # summarize(Answer=mean(HomekWh))
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point()+
+  geom_line()+
+  geom_smooth()
+
+# Jan_warm <- Solar_new_all %>% 
+#   filter(date(Timestamp) == mdy("1-17-2023")) %>% 
+#   mutate(Base = case_when(
+#     between(Timestamp, mdy_hm("1-17-2023 00:00"), mdy_hm("1-17-2023 06:00")) ~ 0.5,
+#     between(Timestamp, mdy_hm("1-17-2023 06:00"), mdy_hm("1-17-2023 09:00")) ~ 0.65,
+#     between(Timestamp, mdy_hm("1-17-2023 09:00"), mdy_hm("1-17-2023 15:00")) ~ 0.9,
+#     between(Timestamp, mdy_hm("1-17-2023 15:00"), mdy_hm("1-17-2023 22:00")) ~ 1.0,
+#     between(Timestamp, mdy_hm("1-17-2023 22:00"), mdy_hm("1-17-2023 24:00")) ~ 0.5
+#   ))
+
+Jan_warm <- Solar_new_all %>% 
+  filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+  mutate(Base = case_when(
+    between(Timestamp, mdy_hm("1-18-2023 00:00"), mdy_hm("1-18-2023 06:00")) ~ 0.4,
+    between(Timestamp, mdy_hm("1-18-2023 06:00"), mdy_hm("1-18-2023 09:00")) ~ 0.55,
+    between(Timestamp, mdy_hm("1-18-2023 09:00"), mdy_hm("1-18-2023 15:00")) ~ 0.9,
+    between(Timestamp, mdy_hm("1-18-2023 15:00"), mdy_hm("1-18-2023 22:00")) ~ 1.0,
+    between(Timestamp, mdy_hm("1-18-2023 22:00"), mdy_hm("1-18-2023 24:00")) ~ 0.5
+  ))
+
+Jan_warm %>% 
+  mutate(Unbase=HomekWh-Base) %>% 
+  ggplot(aes(x=Timestamp, y=Unbase))+
+  geom_point()+
+  geom_line()
+
+#   Calc and flag inflection points
+
+Jan_warm %>% 
+  mutate(Unbase=HomekWh-Base) %>% 
+  mutate(Deriv=(lead(Unbase, default=0)-lag(Unbase, default=0))/10) %>% 
+  mutate(Flag=as_factor(if_else(abs(Deriv)>0.025 & Unbase<0.15,"red", "black"))) %>% 
+  ggplot(aes(x=Timestamp, y=Unbase))+
+  geom_point(aes(color=Flag))+
+  scale_color_manual(values = c("red" = "red",
+                                "black"="black")) +
+  geom_line()
+
+Jan_warm %>% 
+  mutate(Unbase=HomekWh-Base) %>% 
+  mutate(Deriv=(lead(Unbase, default=0)-lag(Unbase, default=0))/10) %>% 
+  mutate(Flag=as_factor(if_else(abs(Deriv)>0.025 & Unbase<0.15,"red", "black"))) %>% 
+  filter(Flag=="red") %>% 
+  mutate(Width=Hour-lag(Hour)) %>% 
+  filter(Width<0.8) %>% 
+  ggplot(aes(x=Timestamp, y=Width))+
+  geom_point()+
+  geom_smooth(method="lm")
 
 
 
