@@ -287,6 +287,18 @@ df2 <- df %>%
          kWh=USAGE_KWH,
          Time=USAGE_START_TIME)
 
+df <- read_csv(paste0(path, "Smartmeter_Dec29_Feb18_2023.csv"))
+
+df2 <- df %>% 
+  select(USAGE_DATE, USAGE_START_TIME, USAGE_KWH, 
+         CONSUMPTION_SURPLUSGENERATION) %>% 
+  rename(Type=CONSUMPTION_SURPLUSGENERATION, 
+         Date=USAGE_DATE, 
+         kWh=USAGE_KWH,
+         Time=USAGE_START_TIME) %>% 
+  bind_rows(df2, .)
+
+
 #   Convert to UTC
 
 df2 <- df2 %>% 
