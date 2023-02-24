@@ -14,6 +14,7 @@ Read in and clean up data from solar panels, weather data, ERCOT data, and Smart
 
 library(tidyverse)
 library(lubridate)
+library(tidyjson)
 
 #   Time zone
 
@@ -175,6 +176,16 @@ df2 <- read_csv(paste0(path, "Alan_Tesla_Solar_2.csv"), col_types="cccccc") %>%
 df <- rbind(df, df2)
 
 df2 <- read_csv(paste0(path, "Alan_Tesla_Solar_3.csv"), col_types="cccccc") %>% 
+  filter(Timestamp!="Timestamp") %>% 
+  mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
+         Solar_W=as.numeric(Solar_kW),
+         Battery_W=as.numeric(Battery_kW),
+         Grid_W=as.numeric(Grid_kW)) %>% 
+  select(Timestamp, Solar_W, Battery_W, Grid_W)
+
+df <- rbind(df, df2) %>% distinct()
+
+df2 <- read_csv(paste0(path, "Alan_Tesla_Solar_4.csv"), col_types="cccccc") %>% 
   filter(Timestamp!="Timestamp") %>% 
   mutate(Timestamp=lubridate::ymd_hms(Timestamp, tz="UTC")-hours(6),
          Solar_W=as.numeric(Solar_kW),
@@ -391,6 +402,32 @@ Vaca <- lubridate::as_date(Vaca)
 saveRDS(Vaca, paste0(path, "Vacation.rds"))
 
 ```
+
+##    Nest data
+
+Doesn't have what I want in it.
+
+```{r nest}
+
+# df <-  read_json(paste0(path, "/2023-02-summary.json")) %>% 
+#   spread_all()  
+# 
+# df <-  read_json(paste0(path, "/2023-02-summary.json")) %>% 
+#   # gather_object() %>% 
+#   #head(1) %>% 
+#   # select("..JSON") %>%
+#   enter_object("2023-02-08T00:00:00Z") %>%  
+#   # gather_object %>% json_types %>% count(name, type)
+#   enter_object("events") %>% 
+#   gather_array() %>% 
+#   spread_all()
+#   gather_object %>% json_types %>% count(name, type)
+# 
+# df <-  read_json(paste0(path, "/2023-02-summary.json")) %>% 
+#   gather_object %>% json_types %>% count(name, type)
+
+```
+
 
 ## Save our cleaned files
 
