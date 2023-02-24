@@ -72,10 +72,8 @@ All I need is temperature every 15 minutes
 
 ```{r weather}
 
-tz <- "America/Chicago"
-
 xout <- seq(mdy_hm("01-01-2021T00:00", tz="UTC"),
-            mdy_hm("12-31-2022T00:00", tz="UTC"),
+            mdy_hm("02-19-2023T00:00", tz="UTC"),
             by=15*60)
 
 Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout, rule=2)
@@ -85,11 +83,151 @@ Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x,
 
 ```
 
-##        Combine Smartmeter and Solar to get Home
+##        Using only the new data, estimated various home usage components
 
-Problems. Solar output is instantaneous, so it can be briefly shaded in any 15
-minute period leading to an anomalously small output value, but the smart meter
-data is the integrated kWh value.
+Get estimates for base (night, morning, and evening), A/C peak and cycle length,
+Car draw, and perhaps A/C frequency vs Temperature
 
-So drop any day with negative values for the Home, and apply a smoother to the
-rest?
+Don't forget to use most recent data that has fan turned off.
+
+```{r base}
+
+Solar_new %>% 
+  filter(date(Timestamp) >= mdy("1-1-2023")) %>%
+  filter(date(Timestamp) < mdy("2-14-2023")) %>%
+  filter(HomekWh<1.6) %>% # remove car charging
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point(size=0.1) +
+  labs(title="January New Data with Car Charging Removed")
+
+xform <- 200 # convert degrees F to kWh
+Temperature <- 
+  Weather_trp %>% 
+  filter(date(Date) >= mdy("1-1-2023")) %>%
+  filter(Date < mdy_hm("2-14-2023 12:00")) %>%
+  rename(Timestamp=Date)
+
+Solar_new %>% 
+  filter(date(Timestamp) >= mdy("1-1-2023")) %>%
+  filter(date(Timestamp) < mdy("2-14-2023")) %>%
+  filter(HomekWh<0.4) %>% # remove car charging
+  mutate(Vacation=if_else(lubridate::as_date(Timestamp) %in% Vaca, TRUE, FALSE)) %>% 
+  ggplot(aes(x=Timestamp, y=HomekWh, color=Vacation))+
+  geom_point(size=0.1) +
+  geom_line(data=Temperature, aes(x=Timestamp, y=Temperature/xform), color="red") +
+  scale_y_continuous(
+    name = "kWh",
+    sec.axis = sec_axis(~.*xform, name="Temperature (deg F)")
+  )+
+  labs(title="January New Data with Car Charging Removed")
+
+Solar_new %>% 
+  filter(date(Timestamp) >= mdy("1-1-2023")) %>%
+  filter(date(Timestamp) < mdy("2-14-2023")) %>%
+  filter(HomekWh<0.4) %>% # remove car charging
+  left_join(., Temperature, by="Timestamp") %>% 
+  mutate(Vacation=if_else(lubridate::as_date(Timestamp) %in% Vaca, TRUE, FALSE)) %>% 
+  filter(!Vacation) %>% 
+  group_by(date(Timestamp)) %>% 
+     summarise(kWh=sum(HomekWh, na.rm = TRUE),
+               AvgT = mean(Temperature, na.rm=TRUE)) %>% 
+  ggplot(aes(y=AvgT, x=kWh))+
+  geom_point() +
+  geom_smooth(method="lm")
+
+#####  Break up by time of day
+
+foo <- 
+Solar_new %>% 
+  filter(date(Timestamp) >= mdy("1-1-2023")) %>%
+  filter(date(Timestamp) < mdy("2-14-2023")) %>%
+  left_join(., Temperature, by="Timestamp") %>% 
+  mutate(ToD = case_when(
+    Hour <= 6 | Hour >= 19 ~ "Night",
+    between(Hour, 16, 19) ~ "Eve",
+    TRUE ~ "Day"
+  )) %>% 
+  filter(HomekWh<0.4) %>% # remove car charging
+  mutate(Vacation=if_else(lubridate::as_date(Timestamp) %in% Vaca, TRUE, FALSE))
+
+foo %>% 
+  group_by(date(Timestamp), ToD) %>% 
+  # filter(!Vacation) %>% 
+     summarise(kWh=sum(HomekWh, na.rm = TRUE),
+               Vacation=last(Vacation),
+               AvgT = mean(Temperature, na.rm=TRUE)) %>% 
+  ggplot(aes(y=AvgT, x=kWh, group=ToD, color=ToD))+
+  geom_point() +
+  geom_point(aes(color=Vacation))+
+  geom_smooth(method="lm")
+  
+
+# Solar_new %>% 
+#   filter(date(Timestamp) >= mdy("2-1-2023")) %>%
+#   filter(HomekWh<0.8) %>% # remove car charging
+#   ggplot(aes(x=Timestamp, y=HomekWh))+
+#   geom_point(size=0.1) +
+#   labs(title="February New Data with Car Charging Removed")
+# 
+# xform <- 250 # convert degrees F to kWh
+# Temperature <- 
+#   Weather_trp %>% 
+#   filter(date(Date) >= mdy("2-1-2023")) %>%
+#   filter(Date <= mdy_hm("2-9-2023 12:00")) %>%
+#   rename(Timestamp=Date)
+# 
+# Solar_new %>% 
+#   filter(date(Timestamp) >= mdy("2-1-2023")) %>%
+#   filter(Timestamp <= mdy_hm("2-9-2023 12:00")) %>%
+#   filter(HomekWh<0.4) %>% # remove car charging
+#   ggplot(aes(x=Timestamp, y=HomekWh))+
+#   geom_point(size=0.1) +
+#   geom_line()+
+#   geom_line(data=Temperature, aes(x=Timestamp, y=Temperature/xform), color="red") +
+#   scale_y_continuous(
+#     name = "kWh",
+#     sec.axis = sec_axis(~.*xform, name="Temperature (deg F)")
+#   )+
+#   labs(title="February New Data with Car Charging Removed, cold days only")
+#   
+# Solar_new %>% 
+#   filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+#   filter(Hour>.1 & Hour<1.4) %>% 
+#   # summarize(Answer=mean(HomekWh))
+#   ggplot(aes(x=Timestamp, y=HomekWh))+
+#   geom_point()+
+#   geom_line()
+# 
+# Solar_new_all %>% 
+#   filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+#   mutate(Med=zoo::rollmedian(HomekWh, k=7, fill=c(0,0,0))) %>% 
+#   filter(Hour>1.5) %>% 
+#   ggplot(aes(x=Timestamp, y=HomekWh))+
+#   geom_point()+
+#   geom_line(aes(y=Med))+
+#   geom_smooth(aes(y=Med))
+# 
+# Solar_new_all %>% 
+#   filter(date(Timestamp) == mdy("1-18-2023")) %>% 
+#   filter(Hour>1.0) %>%
+#   filter(HomekWh<1.5) %>% 
+#   # summarize(Answer=mean(HomekWh))
+#   ggplot(aes(x=Timestamp, y=HomekWh))+
+#   geom_point()+
+#   geom_line()+
+#   geom_smooth()
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
