@@ -13,3 +13,5 @@ Overall home usage also from https://www.smartmetertexas.com/home
 
 ERCOT data from https://www.ercot.com/mktinfo/prices
 
+Thermostat data from Google https://takeout.google.com/
+
