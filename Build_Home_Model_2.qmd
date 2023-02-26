@@ -273,7 +273,8 @@ foo_sum_v <- foo2 %>%
     TRUE ~ "Hell"
   )) %>% 
   mutate(Temp=factor(Temp,
-                     levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) 
+                     levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) %>% 
+  mutate(Status="Vacation")
 
 #   Occupied sums
 foo_sum_o <- foo2 %>% 
@@ -290,8 +291,15 @@ foo_sum_o <- foo2 %>%
     TRUE ~ "Hell"
   )) %>% 
   mutate(Temp=factor(Temp,
-                     levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) 
+                     levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) %>% 
+  mutate(Status="Occupied")
 
+rbind(foo_sum_v, foo_sum_o) %>% 
+  ggplot(aes(x=kWh, y=ToD, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient()+
+  scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
+  facet_wrap(vars(Status)) +
+  labs(title="Power Usage by Times")
 
 foo_sum_v %>% 
   ggplot(aes(x=kWh, y=ToD, fill=stat(x)))+
@@ -305,6 +313,13 @@ foo_sum_o %>%
   scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
   labs(title="Occupied times")
 
+rbind(foo_sum_v, foo_sum_o) %>% 
+  ggplot(aes(x=kWh, y=Temp, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient()+
+  scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
+  facet_wrap(vars(Status)) +
+  labs(title="Home power usage, outside temperature in 10 degree increments")
+  
 foo_sum_v %>% 
   ggplot(aes(x=kWh, y=Temp, fill=stat(x)))+
   ggridges::geom_density_ridges_gradient()+
