@@ -77,9 +77,11 @@ xout <- seq(mdy_hm("01-01-2021T00:00", tz="UTC"),
             by=15*60)
 
 Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout, rule=2)
+Weather_D <- approx(Weather$Date, Weather$Dewpoint, xout=xout, rule=2)
 
 Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x, 
-                    Temperature=Weather_T$y))
+                    Temperature=Weather_T$y,
+                    Dewpoint=Weather_D$y))
 
 ```
 
@@ -152,77 +154,207 @@ Solar_new %>%
 
 foo %>% 
   group_by(date(Timestamp), ToD) %>% 
-  # filter(!Vacation) %>% 
+  filter(!Vacation) %>% 
      summarise(kWh=sum(HomekWh, na.rm = TRUE),
-               Vacation=last(Vacation),
+               # Vacation=last(Vacation),
                AvgT = mean(Temperature, na.rm=TRUE)) %>% 
   ggplot(aes(y=AvgT, x=kWh, group=ToD, color=ToD))+
   geom_point() +
-  geom_point(aes(color=Vacation))+
+  # geom_point(aes(color=Vacation))+
   geom_smooth(method="lm")
   
-
-# Solar_new %>% 
-#   filter(date(Timestamp) >= mdy("2-1-2023")) %>%
-#   filter(HomekWh<0.8) %>% # remove car charging
-#   ggplot(aes(x=Timestamp, y=HomekWh))+
-#   geom_point(size=0.1) +
-#   labs(title="February New Data with Car Charging Removed")
-# 
-# xform <- 250 # convert degrees F to kWh
-# Temperature <- 
-#   Weather_trp %>% 
-#   filter(date(Date) >= mdy("2-1-2023")) %>%
-#   filter(Date <= mdy_hm("2-9-2023 12:00")) %>%
-#   rename(Timestamp=Date)
-# 
-# Solar_new %>% 
-#   filter(date(Timestamp) >= mdy("2-1-2023")) %>%
-#   filter(Timestamp <= mdy_hm("2-9-2023 12:00")) %>%
-#   filter(HomekWh<0.4) %>% # remove car charging
-#   ggplot(aes(x=Timestamp, y=HomekWh))+
-#   geom_point(size=0.1) +
-#   geom_line()+
-#   geom_line(data=Temperature, aes(x=Timestamp, y=Temperature/xform), color="red") +
-#   scale_y_continuous(
-#     name = "kWh",
-#     sec.axis = sec_axis(~.*xform, name="Temperature (deg F)")
-#   )+
-#   labs(title="February New Data with Car Charging Removed, cold days only")
-#   
-# Solar_new %>% 
-#   filter(date(Timestamp) == mdy("1-18-2023")) %>% 
-#   filter(Hour>.1 & Hour<1.4) %>% 
-#   # summarize(Answer=mean(HomekWh))
-#   ggplot(aes(x=Timestamp, y=HomekWh))+
-#   geom_point()+
-#   geom_line()
-# 
-# Solar_new_all %>% 
-#   filter(date(Timestamp) == mdy("1-18-2023")) %>% 
-#   mutate(Med=zoo::rollmedian(HomekWh, k=7, fill=c(0,0,0))) %>% 
-#   filter(Hour>1.5) %>% 
-#   ggplot(aes(x=Timestamp, y=HomekWh))+
-#   geom_point()+
-#   geom_line(aes(y=Med))+
-#   geom_smooth(aes(y=Med))
-# 
-# Solar_new_all %>% 
-#   filter(date(Timestamp) == mdy("1-18-2023")) %>% 
-#   filter(Hour>1.0) %>%
-#   filter(HomekWh<1.5) %>% 
-#   # summarize(Answer=mean(HomekWh))
-#   ggplot(aes(x=Timestamp, y=HomekWh))+
-#   geom_point()+
-#   geom_line()+
-#   geom_smooth()
-
-
 
 ```
 
 
+##   Repeat analysis with the old data
 
+```{r old}
+
+Solar_old %>% 
+  left_join(., Smart, by=c(Timestamp="Date")) %>% 
+  mutate(HomekWh= kWh-Generation + Consumption) %>% 
+  filter(date(Timestamp) < mdy("2-1-2022")) %>%
+  filter(date(Timestamp) > mdy("12-31-2021")) %>%
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point(size=0.1) +
+  labs(title="Old Data Jan 2022")
+
+Solar_old %>% 
+  left_join(., Smart, by=c(Timestamp="Date")) %>% 
+  mutate(HomekWh= kWh-Generation + Consumption) %>% 
+  filter(date(Timestamp) < mdy("3-1-2022")) %>%
+  filter(date(Timestamp) > mdy("1-31-2022")) %>%
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point(size=0.1) +
+  labs(title="Old Data Feb 2022")
+
+Solar_old %>% 
+  left_join(., Smart, by=c(Timestamp="Date")) %>% 
+  mutate(HomekWh= kWh-Generation + Consumption) %>% 
+  filter(date(Timestamp) < mdy("7-1-2022")) %>%
+  filter(date(Timestamp) > mdy("5-31-2022")) %>%
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point(size=0.1) +
+  labs(title="Old Data June 2022")
+
+Solar_old %>% 
+  left_join(., Smart, by=c(Timestamp="Date")) %>% 
+  mutate(HomekWh= kWh-Generation + Consumption) %>% 
+  filter(date(Timestamp) < mdy("6-21-2022")) %>%
+  filter(date(Timestamp) > mdy("6-14-2022")) %>%
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point(size=0.1) +
+  geom_line()+
+  labs(title="Old Data June 2022")
+
+foo2 <- 
+Solar_old %>% 
+  left_join(., Smart, by=c(Timestamp="Date")) %>% 
+  mutate(HomekWh= kWh-Generation + Consumption) %>% 
+  filter(date(Timestamp) < mdy("11-1-2022")) %>%
+  filter(HomekWh>0.0) %>%  # remove negatives
+  filter(HomekWh<1.0) # remove car charging
+  
+foo2 %>% 
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point(size=0.1) +
+  labs(title="Old Data with Car Charging Removed")
+
+xform <- 100 # convert degrees F to kWh
+Temperature <- 
+  Weather_trp %>% 
+  filter(date(Date) >= mdy("1-1-2021")) %>%
+  filter(Date < mdy_hm("11-1-2022 12:00")) %>%
+  rename(Timestamp=Date)
+
+foo2 %>% 
+  ggplot(aes(x=Timestamp, y=HomekWh, color=Vacation))+
+  geom_point(size=0.1) +
+  geom_line(data=Temperature, aes(x=Timestamp, y=Temperature/xform), color="red") +
+  scale_y_continuous(
+    name = "kWh",
+    sec.axis = sec_axis(~.*xform, name="Temperature (deg F)")
+  )+
+  labs(title="Old Data with Car Charging Removed")
+
+foo2 %>% 
+  left_join(., Temperature, by="Timestamp") %>% 
+  group_by(date(Timestamp)) %>% 
+     summarise(kWh=sum(HomekWh, na.rm = TRUE),
+               AvgT = mean(Temperature, na.rm=TRUE)) %>% 
+  ggplot(aes(x=AvgT, y=kWh))+
+  geom_point() +
+  geom_smooth(method="lm")+
+  labs(title="All the data")
+
+#####  Break up by time of day
+
+foo2 <- foo2 %>% 
+  left_join(., Temperature, by="Timestamp") %>% 
+  mutate(ToD = case_when(
+    Hour <= 6 | Hour >= 19 ~ "Night",
+    between(Hour, 16, 19) ~ "Eve",
+    TRUE ~ "Day"
+  ))  
+
+# Vacation sums
+foo_sum_v <- foo2 %>% 
+  group_by(date(Timestamp), ToD) %>% 
+  filter(Vacation) %>% 
+     summarise(kWh=mean(HomekWh, na.rm = TRUE),
+               AvgD = mean(Dewpoint, na.rm=TRUE),  
+               AvgT = mean(Temperature, na.rm=TRUE)) %>%  
+  mutate(Temp = case_when(
+    AvgT <= 60 ~ "Cold",
+    between(AvgT, 60, 70) ~ "Cool",
+    between(AvgT, 70, 80) ~ "Warm",
+    between(AvgT, 80, 90) ~ "Hot",
+    TRUE ~ "Hell"
+  )) %>% 
+  mutate(Temp=factor(Temp,
+                     levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) 
+
+#   Occupied sums
+foo_sum_o <- foo2 %>% 
+  group_by(date(Timestamp), ToD) %>% 
+  filter(!Vacation) %>% 
+     summarise(kWh=mean(HomekWh, na.rm = TRUE),
+               AvgD = mean(Dewpoint, na.rm=TRUE),  
+               AvgT = mean(Temperature, na.rm=TRUE)) %>%  
+  mutate(Temp = case_when(
+    AvgT <= 60 ~ "Cold",
+    between(AvgT, 60, 70) ~ "Cool",
+    between(AvgT, 70, 80) ~ "Warm",
+    between(AvgT, 80, 90) ~ "Hot",
+    TRUE ~ "Hell"
+  )) %>% 
+  mutate(Temp=factor(Temp,
+                     levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) 
+
+
+foo_sum_v %>% 
+  ggplot(aes(x=kWh, y=ToD, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient()+
+  scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
+  labs(title="Vacation times")
+
+foo_sum_o %>% 
+  ggplot(aes(x=kWh, y=ToD, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient()+
+  scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
+  labs(title="Occupied times")
+
+foo_sum_v %>% 
+  ggplot(aes(x=kWh, y=Temp, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient()+
+  scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
+  labs(title="Vacation Home power usage, outside temperature in 10 degree increments")
+  
+foo_sum_o %>% 
+  ggplot(aes(x=kWh, y=Temp, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient()+
+  scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
+  labs(title="Occupied Home power usage, outside temperature in 10 degree increments")
+  
+
+foo_sum_o %>% 
+  ggplot(aes(x=AvgT, y=kWh, group=ToD, color=ToD))+
+  geom_point() +
+  geom_smooth(method="lm")+
+  labs(title="House occupied")
+
+foo_sum_v %>% 
+  ggplot(aes(x=AvgT, y=kWh, group=ToD, color=ToD))+
+  geom_point() +
+  geom_smooth(method="lm")+
+  labs(title="Vacation")
+  
+rbind(foo_sum_v, foo_sum_o) %>% 
+  ggplot(aes(x=AvgT, y=kWh, group=ToD, color=ToD))+
+  geom_point() +
+  geom_smooth(method="lm")+
+  labs(title="All data")
+
+foo_sum_o %>% 
+  ggplot(aes(x=AvgD, y=kWh, group=ToD, color=ToD))+
+  geom_point() +
+  geom_smooth(method="lm")+
+  labs(title="House occupied")
+
+foo_sum_v %>% 
+  ggplot(aes(x=AvgD, y=kWh, group=ToD, color=ToD))+
+  geom_point() +
+  geom_smooth(method="lm")+
+  labs(title="Vacation")
+  
+rbind(foo_sum_v, foo_sum_o) %>% 
+  ggplot(aes(x=AvgD, y=kWh, group=ToD, color=ToD))+
+  geom_point() +
+  geom_smooth(method="lm")+
+  labs(title="All data")
+
+```
 
 
 
