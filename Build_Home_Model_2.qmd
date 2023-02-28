@@ -319,6 +319,13 @@ rbind(foo_sum_v, foo_sum_o) %>%
   scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
   facet_wrap(vars(Status)) +
   labs(title="Home power usage, outside temperature in 10 degree increments")
+
+rbind(foo_sum_v, foo_sum_o) %>% 
+  ggplot(aes(x=kWh, y=Temp, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient()+
+  scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
+  facet_wrap(vars(Status, ToD)) +
+  labs(title="Home power usage, Time of Day, Vacation, and Average Temperature")
   
 foo_sum_v %>% 
   ggplot(aes(x=kWh, y=Temp, fill=stat(x)))+
@@ -371,6 +378,37 @@ rbind(foo_sum_v, foo_sum_o) %>%
 
 ```
 
+##  Build Car model using new data only
+
+```{r car}
+
+Solar_new %>% 
+  filter(date(Timestamp) >= mdy("1-9-2023")) %>%
+  filter(date(Timestamp) < mdy("2-15-2023")) %>%
+  filter(Hour<6) %>% 
+  # filter(HomekWh>1.6) %>% # remove car charging
+  ggplot(aes(x=Timestamp, y=HomekWh))+
+  geom_point() +
+  geom_line()+
+  labs(title="Jan & Feb New Data Car Charging")
+
+ExpFunc <- as_tibble(bind_cols(y=dexp(seq(0,23.75, 0.25))*1.7, 
+                               x=seq(0,23.75, 0.25)))
+
+Solar_new %>% 
+  filter(date(Timestamp) >= mdy("1-9-2023")) %>%
+  filter(date(Timestamp) < mdy("2-15-2023")) %>%
+  # filter(Hour<5) %>%
+  # filter(HomekWh>1.6) %>% # remove car charging
+  group_by(Hour) %>% 
+    summarize(Car=mean(HomekWh)-0.1) %>% # 0.1 is the base value 
+  ggplot(aes(x=Hour, y=Car))+
+  geom_point() +
+  geom_line()+
+  geom_line(data=ExpFunc, aes(x=x, y=y), color="red") + 
+  labs(title="Jan & Feb New Data Car Charging")
+
+```
 
 
 
