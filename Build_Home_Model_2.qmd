@@ -378,6 +378,133 @@ rbind(foo_sum_v, foo_sum_o) %>%
 
 ```
 
+##        Build distributions
+
+```{r functions}
+
+#   https://rdrr.io/github/sethmcg/climod/src/R/pdf2cdf.R
+pdf2cdf <- function(p, x=NULL, normalize=TRUE, expand=FALSE){
+    if(is.null(x)) {
+        if(is.atomic(p)){
+            y <- p
+            x <- seq(length(y))
+        } else {
+            stopifnot(exists("x", where=p) && exists("y", where=p))
+            y <- p$y
+            x <- p$x
+        }
+    } else {
+        stopifnot(is.atomic(p) && is.atomic(x))
+        y <- p
+    }
+    
+    stopifnot(length(x)==length(y))
+    stopifnot(length(x) > 2)
+    stopifnot(all(is.finite(x)))
+    stopifnot(all(is.finite(y)))
+    stopifnot(all(diff(x) > 0))
+
+    if(any(y < 0)){
+        y[y < 0] <- 0
+    }
+    
+    ## trapezoids: N = no., L = left height, R = right height, W = width
+    N <- length(y) + 1
+    L <- c(0,y)
+    R <- c(y,0)
+    W <- diff(x)
+    W <- c(W[1], W, W[N-2])
+    area <- W * (L + R) / 2
+    cdf <- cumsum(area)
+
+    if(normalize){
+        cdf <- cdf / cdf[N]
+    }
+    if(expand){
+        return(list(x=c(x[1]-W[1],x,x[N-1]+W[N]), y=c(0,cdf)))
+    } else {
+        return(list(x=x, y=cdf[-N]))
+    }
+}
+
+
+make_icdf <- function(foo, offset=0){
+  #   density 
+  denf = density(foo$kWh, adjust=1, n=1024)
+  #   Convert to CDF
+  cdf <- pdf2cdf(denf)
+  #   Build data frame
+  #dens = data.frame(x=denf$x, y=denf$y)
+  #   Build data frame
+  cdf <- data.frame(x=denf$x, y=cdf$y)
+  #   Spline fit function
+  q <- splinefun(cdf$y, cdf$x, method="monoH.FC")
+  #   Output points
+  probs <- seq(0,1,0.001)
+  #   Invert CDF
+  icdf <- as_tibble(cbind(kWh=q(probs)-offset, Prob=probs))
+  return(icdf)
+}
+
+
+```
+
+
+```{r distributions}
+
+foo_sum <- rbind(foo_sum_v, foo_sum_o)
+
+foobar <- foo_sum %>% filter(Status=="Occupied") %>% 
+                    filter(ToD=="Day") %>% 
+                    filter(Temp=="Hot")
+
+icdf <- make_icdf(foobar, offset=0)
+
+icdf %>% 
+  ggplot(aes(x=kWh, y=Prob)) +
+  geom_line()+
+  geom_point()
+
+# Build all distributions
+
+output <- NULL
+for (Temp in c("Cold", "Cool", "Warm", "Hot", "Hell")){
+  for (ToD in c("Night", "Day", "Eve")){
+    for (Status in c("Occupied", "Vacation")){
+      print(paste(Temp, ToD, Status))
+      CalcTemp <- case_when(
+        Temp == "Hell" & Status == "Occupied" ~ "Hot",
+        Temp == "Cold" & Status == "Vacation" & ToD!="Night" ~ "Cool",
+        TRUE ~ Temp 
+      )
+      print(paste(CalcTemp, ToD, Status))
+      foobar <- foo_sum %>% filter(Status==Status) %>% 
+                            filter(ToD==ToD) %>% 
+                            filter(Temp==CalcTemp)
+      icdf <- make_icdf(foobar, offset=0)
+      icdf <- icdf %>% mutate(Temp=Temp, ToD=ToD, Status=Status)
+      output <- rbind(output, icdf)
+    }
+  }
+}
+
+output %>% 
+  ggplot(aes(x=kWh, y=Prob)) +
+  geom_line() +
+  facet_wrap(vars(Temp, ToD, Status))
+
+saveRDS(output, paste0(path, "ICDF_HomePower_Vac_Temp_ToD.rds"))
+
+```
+
+```
+
+
+
+
+
+
+
 ##  Build Car model using new data only
 
 ```{r car}
