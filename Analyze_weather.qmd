@@ -173,3 +173,153 @@ foo %>%
     
 
 ```
+
+##  Calculate probabilites to save
+
+```{r probability}
+
+foo <- Weather_trp %>% 
+  mutate(Hour=hour(Date) + trunc(minute(Date)/15)*0.25) 
+
+#  sums
+foo_sum <- foo %>% 
+  mutate(Date=date(Date)) %>% 
+  group_by(Date, Hour) %>% 
+     summarise(AvgD = mean(Dewpoint, na.rm=TRUE),  
+               AvgT = mean(Temperature, na.rm=TRUE)) %>%  
+  mutate(Temp = case_when(
+    AvgT <= 60 ~ "Cold",
+    between(AvgT, 60, 70) ~ "Cool",
+    between(AvgT, 70, 80) ~ "Warm",
+    between(AvgT, 80, 90) ~ "Hot",
+    TRUE ~ "Hell"
+  )) %>% 
+  mutate(Month=month(Date)) %>% 
+  mutate(Temp=factor(Temp,
+                     levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) %>% 
+    mutate(ToD = case_when(
+    Hour <= 6 | Hour >= 19 ~ "Night",
+    between(Hour, 16, 19) ~ "Eve",
+    TRUE ~ "Day"
+  ))  
+
+```
+
+
+##        Build distributions
+
+```{r functions}
+
+#   https://rdrr.io/github/sethmcg/climod/src/R/pdf2cdf.R
+pdf2cdf <- function(p, x=NULL, normalize=TRUE, expand=FALSE){
+    if(is.null(x)) {
+        if(is.atomic(p)){
+            y <- p
+            x <- seq(length(y))
+        } else {
+            stopifnot(exists("x", where=p) && exists("y", where=p))
+            y <- p$y
+            x <- p$x
+        }
+    } else {
+        stopifnot(is.atomic(p) && is.atomic(x))
+        y <- p
+    }
+    
+    stopifnot(length(x)==length(y))
+    stopifnot(length(x) > 2)
+    stopifnot(all(is.finite(x)))
+    stopifnot(all(is.finite(y)))
+    stopifnot(all(diff(x) > 0))
+
+    if(any(y < 0)){
+        y[y < 0] <- 0
+    }
+    
+    ## trapezoids: N = no., L = left height, R = right height, W = width
+    N <- length(y) + 1
+    L <- c(0,y)
+    R <- c(y,0)
+    W <- diff(x)
+    W <- c(W[1], W, W[N-2])
+    area <- W * (L + R) / 2
+    cdf <- cumsum(area)
+
+    if(normalize){
+        cdf <- cdf / cdf[N]
+    }
+    if(expand){
+        return(list(x=c(x[1]-W[1],x,x[N-1]+W[N]), y=c(0,cdf)))
+    } else {
+        return(list(x=x, y=cdf[-N]))
+    }
+}
+
+
+make_icdf <- function(foo, offset=0){
+  #   density 
+  denf = density(foo$AvgT, adjust=1, n=1024)
+  #   Convert to CDF
+  cdf <- pdf2cdf(denf)
+  #   Build data frame
+  #dens = data.frame(x=denf$x, y=denf$y)
+  #   Build data frame
+  cdf <- data.frame(x=denf$x, y=cdf$y)
+  #   Spline fit function
+  q <- splinefun(cdf$y, cdf$x, method="monoH.FC")
+  #   Output points
+  probs <- seq(0,1,0.001)
+  #   Invert CDF
+  icdf <- as_tibble(cbind(AvgT=q(probs)-offset, Prob=probs))
+  return(icdf)
+}
+
+
+```
+
+
+```{r distributions}
+
+foobar <- foo_sum %>% filter(ToD=="Day") %>% 
+                      filter(Temp=="Hot") %>% 
+                      filter(Month==8)
+
+icdf <- make_icdf(foobar, offset=0)
+
+icdf %>% 
+  ggplot(aes(x=AvgT, y=Prob)) +
+  geom_line()+
+  geom_point()
+
+#   Let's look at density functions first
+
+
+p <- foo_sum %>% 
+  ggplot(aes(x=AvgT, y=ToD, fill=stat(x)))+
+  ggridges::geom_density_ridges_gradient(messages=FALSE)+
+  scale_fill_viridis_c(name = "Average Hourly Temperature", option = "C")+
+  facet_wrap(vars(Month, Temp)) +
+  labs(title="Average Hourly Temperature, Time of Day, ")
+  
+suppressMessages(print(p))
+
+#   Want cumulative probability of bucket as function of Month and Hour
+
+output <- foo_sum %>% 
+  mutate(HourOfDay=as.integer(Hour)) %>% 
+  group_by(Month, HourOfDay, Temp) %>% 
+    summarise(Nbucket=n()) %>% 
+  pivot_wider(names_from=Temp, values_from=Nbucket) %>% 
+  rowwise() %>% 
+  mutate(Total=sum(c(Cold, Cool, Warm, Hot, Hell), na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  #   Now these are cumulative probabilities
+  mutate(Cold=Cold/Total,
+         Cool=Cool/Total + Cold,
+         Warm=Warm/Total + Cool,
+         Hot=Hot/Total + Warm,
+         Hell=Hell/Total + Hot)
+
+saveRDS(output, paste0(path, "ICDF_TempBucket_per_Month_Hour.rds"))
+
+```
