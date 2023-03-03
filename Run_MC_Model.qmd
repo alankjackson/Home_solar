@@ -5,23 +5,23 @@ format: html
 editor: visual
 ---
 
-## Quarto
+## This is a Monte Carlo model
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Initialize what the model will need
 
-## Running Code
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
-```{r}
-1 + 1
-```
-
-You can add options to executable code like this
-
-```{r}
+```{r initialize}
 #| echo: false
-2 * 2
+
+library(tidyverse)
+library(lubridate)
+
+path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
+
+ICDF_Temperature <- read_rds(paste0(path, "ICDF_TempBucket_per_Month_Hour.rds"))
+ICDF_Usage <- read_rds(paste0(path, "ICDF_HomePower_Vac_Temp_ToD.rds"))
+Max_solar <- read_rds(paste0(path, "MaxSolarByMonth.rds"))
+Pct_Max_solar <- read_rds(paste0(path, "ICDF_Month_Hour_PctMax.rds"))
+
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
