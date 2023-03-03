@@ -396,6 +396,7 @@ Vaca <- c(Vaca, seq(lubridate::mdy("6/7/22"),lubridate::mdy("6/26/22"),by=1))
 Vaca <- c(Vaca, seq(lubridate::mdy("6/28/22"),lubridate::mdy("9/29/22"),by=1))
 Vaca <- c(Vaca, seq(lubridate::mdy("10/25/22"),lubridate::mdy("11/01/22"),by=1))
 Vaca <- c(Vaca, seq(lubridate::mdy("11/21/22"),lubridate::mdy("11/24/22"),by=1))
+Vaca <- c(Vaca, seq(lubridate::mdy("2/2/23"),lubridate::mdy("2/7/23"),by=1))
 
 Vaca <- lubridate::as_date(Vaca)
 
