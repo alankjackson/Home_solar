@@ -762,12 +762,20 @@ p <-  Diffs %>%
 #   Convert data from Watts to kWh and rename to something more sensible
 
 output <- New_xform %>% 
-  mutate(Ihour=as.integer(Hour)) %>% 
-    group_by(Month, Ihour) %>% 
-    summarize(kWh=DescTools::AUC(Hour, Solar_W, method="spline")) %>% 
-  mutate(kWh=0.001*kWh)
+  mutate(Hour=as.integer(Hour)) %>% 
+    group_by(Month, Hour) %>% 
+    summarize(kWh=mean(Fit, na.rm=TRUE)) %>% 
+  mutate(kWh=0.001*kWh) %>% 
+  filter(!is.na(Hour))
 
-saveRDS(New_xform,(paste0(path, "MaxSolarByMonth.rds")))
+Final <- expand_grid(Month=1:12, Hour=0:23) %>% 
+  mutate(kWh=0) %>% 
+  anti_join(., output, by=c("Month", "Hour")) %>% 
+  bind_rows(., output) %>% 
+  arrange(Month, Hour)
+  
+
+saveRDS(Final,(paste0(path, "MaxSolarByMonth_Hour.rds")))
 
 ```
 
