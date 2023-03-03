@@ -657,7 +657,8 @@ Dec_new <- Solar_new %>%
               std=sd(Solar_W)) %>% 
   mutate(Fit=Sfit(as_tibble(bind_cols(Hour=Hour, Max=Max))))  
 
-New_xform <-  Dec_new
+New_xform <-  Dec_new %>% 
+  mutate(Month=12)
 
 for (mon in 1:11) {
 
@@ -743,7 +744,8 @@ p <-  Diffs %>%
   # Now apply the diff to the 2022 December data
 
   Xform <- left_join(Dec_new, Diff_sm_interp_df, by=c("Hour"="DecHour")) %>% 
-    mutate(Hour=Hour+Diff_sm)
+    mutate(Hour=Hour+Diff_sm) %>% 
+    mutate(Month=mon)
   
   p <- Xform %>% 
     ggplot(aes(x=Hour, y=Fit)) +
@@ -756,6 +758,14 @@ p <-  Diffs %>%
   New_xform <- bind_rows(New_xform, Xform)
 
 }
+
+#   Convert data from Watts to kWh and rename to something more sensible
+
+output <- New_xform %>% 
+  mutate(Ihour=as.integer(Hour)) %>% 
+    group_by(Month, Ihour) %>% 
+    summarize(kWh=DescTools::AUC(Hour, Solar_W, method="spline")) %>% 
+  mutate(kWh=0.001*kWh)
 
 saveRDS(New_xform,(paste0(path, "MaxSolarByMonth.rds")))
 
