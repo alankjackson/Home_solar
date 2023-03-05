@@ -768,6 +768,8 @@ output <- New_xform %>%
   mutate(kWh=0.001*kWh) %>% 
   filter(!is.na(Hour))
 
+#   Add padding for when there is no sun
+
 Final <- expand_grid(Month=1:12, Hour=0:23) %>% 
   mutate(kWh=0) %>% 
   anti_join(., output, by=c("Month", "Hour")) %>% 
