@@ -306,13 +306,14 @@ suppressMessages(print(p))
 
 #   Want cumulative probability of bucket as function of Month and Hour
 
-# output <- 
+output <- 
   foo_sum %>% 
   mutate(HourOfDay=as.integer(Hour)) %>% 
   group_by(Month, HourOfDay, Temp) %>% 
     summarise(Nbucket=n()) %>% 
   replace_na(list(Nbucket=0)) %>% 
   pivot_wider(names_from=Temp, values_from=Nbucket) %>% 
+  replace_na(list(Cold=0, Cool=0, Warm=0, Hot=0, Hell=0)) %>% 
   rowwise() %>% 
   mutate(Total=sum(c(Cold, Cool, Warm, Hot, Hell), na.rm = TRUE)) %>% 
   ungroup() %>% 
