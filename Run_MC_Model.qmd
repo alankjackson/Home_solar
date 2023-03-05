@@ -19,9 +19,93 @@ library(lubridate)
 path <- "/home/ajackson/Dropbox/Rprojects/Tulane_Solar/Data/"
 
 ICDF_Temperature <- read_rds(paste0(path, "ICDF_TempBucket_per_Month_Hour.rds"))
-ICDF_Usage <- read_rds(paste0(path, "ICDF_HomePower_Vac_Temp_ToD.rds"))
-Max_solar <- read_rds(paste0(path, "MaxSolarByMonth.rds"))
+ICDF_Usage <- read_rds(paste0(path, "ICDF_HomePower_Vac_Temp_ToD.rds")) %>% 
+  rowwise() %>% 
+  mutate(kWh=max(0.05, kWh)) %>% 
+  ungroup()
+Max_solar <- read_rds(paste0(path, "MaxSolarByMonth_Hour.rds"))
 Pct_Max_solar <- read_rds(paste0(path, "ICDF_Month_Hour_PctMax.rds"))
+
+ICDF_TempLong <- ICDF_Temperature %>% 
+  select(-Total) %>% 
+  pivot_longer(cols=c("Cold", "Cool", "Warm", "Hot", "Hell"), 
+               names_to="Temperature", 
+               values_to="CDF")
+
+```
+
+## Home Usage Function
+
+```{r Home}
+
+#   Temp = Temperature bucket (Cold, Cool, Warm, Hot, Hell)
+#   Hour = integer hour of day (0-23)
+#   Occupied = "Occupied" or "Vacation" 
+
+##############   Home
+Home <- function(Temp, Hour, Occupied) {
+  ToD <- case_when(
+    Hour <= 6 | Hour >= 19 ~ "Night",
+    between(Hour, 16, 19) ~ "Eve",
+    TRUE ~ "Day"
+  )
+  
+  pick <- round(runif(1), digits=3)
+  
+  Answer <- ICDF_Usage %>% 
+    filter(Temp==!!Temp) %>% 
+    filter(Status==Occupied) %>% 
+    filter(ToD==!!ToD) %>% 
+    filter(Prob==pick)  
+  
+  if (length(Answer$kWh)>0) {return(Answer$kWh)}
+  else {return(0.05)}
+}
+
+############   Weather
+Weather <- function(month, hour){
+  Seed <- runif(1)
+  Answer <- ICDF_TempLong %>% 
+    filter(Month==month , HourOfDay==hour) %>%  
+    filter(Seed<CDF)
+  return(Answer$Temperature[1]) 
+}
+#############
+
+# output <- NULL
+# for (Hour in round(runif(5000)*23)) {
+#   foo <- as_tibble(bind_cols(Hour=Hour, 
+#                              kWh=Home(Temp, Hour, Occupied)))
+#   output <- bind_rows(output, foo)
+# }
+# 
+# output %>% 
+#   group_by(Hour) %>% 
+#      summarize(kWh=mean(kWh)) %>% 
+#   ggplot(aes(x=Hour, y=kWh))+
+#   geom_point()+
+#   geom_smooth()
+
+foo <- as.integer(round(runif(500)*23)) %>% 
+  as_tibble() %>% 
+  set_names(c("Hour")) 
+
+foo <- foo %>% 
+  rowwise() %>% 
+  mutate(Month=as.integer(round(runif(1)*11+1))) %>% 
+  ungroup()
+
+foo <- foo %>% 
+  mutate(Temp=Weather(Month, Hour))
+
+Occupied <- "Occupied"
+
+foo <- foo %>% 
+  mutate(kWh=Home(Temp, Hour, Occupied))
+
+#   Make some plots
+
+
 
 ```
 
