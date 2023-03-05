@@ -33,6 +33,7 @@ xout <- seq(mdy_hm("01-01-2013T00:00", tz=tz),
 
 Weather_T <- approx(Weather$Date, Weather$Temperature, xout=xout)
 Weather_P <- approx(Weather$Date, Weather$Precip, xout=xout)
+Weather_D <- approx(Weather$Date, Weather$Dewpoint, xout=xout)
 
 #   Pick out max cloud cover factor
 
@@ -52,7 +53,9 @@ Weather_C <- approx(Weather$Date, Weather$Cloudiness, xout=xout)
 Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x, 
                     Temperature=Weather_T$y,
                     Precip=Weather_P$y,
-                    Cloudiness=Weather_C$y))   
+                    Dewpoint=Weather_D$y,
+                    Cloudiness=Weather_C$y)) %>% 
+  drop_na(Temperature)
 
 Weather_trp %>%
   head(5000) %>%
@@ -174,7 +177,7 @@ foo %>%
 
 ```
 
-##  Calculate probabilites to save
+## Calculate probabilites to save
 
 ```{r probability}
 
@@ -205,8 +208,7 @@ foo_sum <- foo %>%
 
 ```
 
-
-##        Build distributions
+## Build distributions
 
 ```{r functions}
 
@@ -277,7 +279,6 @@ make_icdf <- function(foo, offset=0){
 
 ```
 
-
 ```{r distributions}
 
 foobar <- foo_sum %>% filter(ToD=="Day") %>% 
@@ -305,10 +306,12 @@ suppressMessages(print(p))
 
 #   Want cumulative probability of bucket as function of Month and Hour
 
-output <- foo_sum %>% 
+# output <- 
+  foo_sum %>% 
   mutate(HourOfDay=as.integer(Hour)) %>% 
   group_by(Month, HourOfDay, Temp) %>% 
     summarise(Nbucket=n()) %>% 
+  replace_na(list(Nbucket=0)) %>% 
   pivot_wider(names_from=Temp, values_from=Nbucket) %>% 
   rowwise() %>% 
   mutate(Total=sum(c(Cold, Cool, Warm, Hot, Hell), na.rm = TRUE)) %>% 
