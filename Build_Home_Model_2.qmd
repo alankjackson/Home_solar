@@ -5,7 +5,6 @@ format: html
 editor: visual
 ---
 
-
 ## Build a Home model
 
 Home will be a function of Temperature, vacation, and time of day
@@ -85,10 +84,9 @@ Weather_trp <- as_tibble(bind_cols(Date=Weather_T$x,
 
 ```
 
-##        Using only the new data, estimated various home usage components
+## Using only the new data, estimated various home usage components
 
-Get estimates for base (night, morning, and evening), A/C peak and cycle length,
-Car draw, and perhaps A/C frequency vs Temperature
+Get estimates for base (night, morning, and evening), A/C peak and cycle length, Car draw, and perhaps A/C frequency vs Temperature
 
 Don't forget to use most recent data that has fan turned off.
 
@@ -166,8 +164,7 @@ foo %>%
 
 ```
 
-
-##   Repeat analysis with the old data
+## Repeat analysis with the old data
 
 ```{r old}
 
@@ -378,7 +375,7 @@ rbind(foo_sum_v, foo_sum_o) %>%
 
 ```
 
-##        Build distributions
+## Build distributions
 
 ```{r functions}
 
@@ -449,6 +446,7 @@ make_icdf <- function(foo, offset=0){
 
 ```
 
+## Distributions
 
 ```{r distributions}
 
@@ -497,15 +495,7 @@ saveRDS(output, paste0(path, "ICDF_HomePower_Vac_Temp_ToD.rds"))
 
 ```
 
-```
-
-
-
-
-
-
-
-##  Build Car model using new data only
+## Build Car model using new data only
 
 ```{r car}
 
@@ -536,10 +526,3 @@ Solar_new %>%
   labs(title="Jan & Feb New Data Car Charging")
 
 ```
-
-
-
-
-
-
-
