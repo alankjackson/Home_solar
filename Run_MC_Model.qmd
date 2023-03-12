@@ -9,7 +9,6 @@ editor: visual
 
 Initialize what the model will need
 
-
 ```{r initialize}
 #| echo: false
 
@@ -65,47 +64,62 @@ Home <- function(Temp, Hour, Occupied) {
 ############   Weather
 Weather <- function(month, hour){
   Seed <- runif(1)
-  Answer <- ICDF_TempLong %>% 
-    filter(Month==month , HourOfDay==hour) %>%  
+  i <- (month-1)*120+1 + 5*hour 
+  Answer <- ICDF_TempLong[i:(i+4),] %>% 
+    # filter(Month==month , HourOfDay==hour) %>%  
     filter(Seed<CDF)
   return(Answer$Temperature[1]) 
 }
 #############
 
-# output <- NULL
-# for (Hour in round(runif(5000)*23)) {
-#   foo <- as_tibble(bind_cols(Hour=Hour, 
-#                              kWh=Home(Temp, Hour, Occupied)))
-#   output <- bind_rows(output, foo)
-# }
-# 
-# output %>% 
-#   group_by(Hour) %>% 
-#      summarize(kWh=mean(kWh)) %>% 
-#   ggplot(aes(x=Hour, y=kWh))+
-#   geom_point()+
-#   geom_smooth()
-
-foo <- as.integer(round(runif(500)*23)) %>% 
+#   Pick 5000 hours at random
+foo <- as.integer(round(runif(5000)*23)) %>% 
   as_tibble() %>% 
   set_names(c("Hour")) 
 
+#   Add a random month to each row
 foo <- foo %>% 
   rowwise() %>% 
   mutate(Month=as.integer(round(runif(1)*11+1))) %>% 
   ungroup()
 
-foo <- foo %>% 
+#   Get the Temperature for that month and hour
+foo <- 
+  foo %>% 
+    rowwise() %>% 
   mutate(Temp=Weather(Month, Hour))
 
 Occupied <- "Occupied"
+Vacation <- "Vacation"
 
-foo <- foo %>% 
-  mutate(kWh=Home(Temp, Hour, Occupied))
+#   Calculate kWh usage
+foo <-
+  foo %>% 
+  rowwise() %>% 
+  mutate(kWh=Home(Temp, Hour, Occupied)) %>% 
+  mutate(kWhb=Home(Temp, Hour, Vacation)) %>% 
+  ungroup()
 
 #   Make some plots
 
+foo %>% 
+  ungroup() %>% 
+  filter(Month==6) %>% 
+  ggplot(aes(x=kWh))+
+  facet_wrap(vars(Temp))+
+  geom_histogram()
 
+foo %>% 
+  ungroup() %>% 
+  ggplot(aes(x=Hour))+
+  facet_wrap(vars(Temp))+
+  geom_histogram()
+
+foo %>% 
+  ungroup() %>% 
+  filter(between(Hour, 12, 18)) %>% 
+  ggplot(aes(x=kWh)) +
+  facet_wrap(vars(Month))+
+  geom_histogram()
 
 ```
-
