@@ -53,9 +53,9 @@ Home <- function(Temp, Hour, Occupied) {
   
   Answer <- ICDF_Usage %>% 
     filter(Temp==!!Temp) %>% 
-    filter(Status==Occupied) %>% 
     filter(ToD==!!ToD) %>% 
-    filter(Prob==pick)  
+    filter(Prob==pick) %>%  
+    filter(Status==Occupied) 
   
   if (length(Answer$kWh)>0) {return(Answer$kWh)}
   else {return(0.05)}
@@ -95,28 +95,41 @@ Vacation <- "Vacation"
 #   Calculate kWh usage
 foo <-
   foo %>% 
-  rowwise() %>% 
   mutate(kWh=Home(Temp, Hour, Occupied)) %>% 
   mutate(kWhb=Home(Temp, Hour, Vacation)) %>% 
   ungroup()
 
+#   Add in cars
+
+foo <- foo %>% 
+  mutate(Car=dexp(Hour)*1.7)
+
 #   Make some plots
 
 foo %>% 
-  ungroup() %>% 
+  mutate(kWh=kWh+Car) %>% 
+  # ungroup() %>% 
   filter(Month==6) %>% 
   ggplot(aes(x=kWh))+
   facet_wrap(vars(Temp))+
   geom_histogram()
 
 foo %>% 
-  ungroup() %>% 
+  # ungroup() %>% 
+  filter(Month==6) %>% 
+  ggplot(aes(x=kWhb))+
+  facet_wrap(vars(Temp))+
+  geom_histogram()
+
+foo %>% 
+  # ungroup() %>% 
   ggplot(aes(x=Hour))+
   facet_wrap(vars(Temp))+
   geom_histogram()
 
 foo %>% 
-  ungroup() %>% 
+  mutate(kWh=kWh+Car) %>% 
+  # ungroup() %>% 
   filter(between(Hour, 12, 18)) %>% 
   ggplot(aes(x=kWh)) +
   facet_wrap(vars(Month))+
