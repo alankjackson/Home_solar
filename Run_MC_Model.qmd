@@ -33,10 +33,21 @@ ICDF_TempLong <- ICDF_Temperature %>%
 
 ```
 
+##    Functions
+
+Home - for Usage
+
+Weather - for Temperature
+
+Solar - for Solar output
+
+Ercot - for price
+
+
+
 ## Home Usage Function
 
 ```{r Home}
-
 #   Temp = Temperature bucket (Cold, Cool, Warm, Hot, Hell)
 #   Hour = integer hour of day (0-23)
 #   Occupied = "Occupied" or "Vacation" 
@@ -72,6 +83,27 @@ Weather <- function(month, hour){
 }
 #############
 
+
+#############  Solar
+Solar <-  function(month, hour) {
+  Max <- Max_solar[(month-1)*24+1 + hour, 3]
+   
+  pick <- round(runif(1), digits=3)
+  
+  Answer <- Pct_Max_solar %>% 
+    filter(Month==month) %>% 
+    filter(Hour==hour) %>% 
+    filter(Prob==pick)  
+  
+  if (length(Answer$PctMax)>0) {return(Max[[1]]*Answer$PctMax[[1]])}
+  else {return(0.00)}
+}
+#############
+```
+
+##        Test functions
+
+```{r Home}
 #   Pick 5000 hours at random
 foo <- as.integer(round(runif(5000)*23)) %>% 
   as_tibble() %>% 
@@ -134,5 +166,27 @@ foo %>%
   ggplot(aes(x=kWh)) +
   facet_wrap(vars(Month))+
   geom_histogram()
+
+AugustDay <- as.integer(round(runif(5000)*23)) %>% 
+  as_tibble() %>% 
+  set_names(c("Hour")) %>% 
+  mutate(Month=8) %>% 
+      rowwise() %>% 
+  mutate(Sun=Solar(Month, Hour)) %>% 
+  ungroup()
+
+AugustDay %>% 
+  ggplot(aes(x=Hour, y=Sun)) +
+  geom_point()
+
+AugustDay %>% 
+  mutate(Hour=as.factor(round(Hour))) %>% 
+    ggplot(aes(x=Sun, y=Hour, fill=stat(x)))+
+    ggridges::geom_density_ridges_gradient(scale=2.5, panel_scaling = FALSE)+
+    scale_fill_viridis_c(name = "kWh", option = "C")+
+    labs(title="Solar Production vs. Hour of Day",
+         subtitle="For August, statistical derivation",
+       x="kWh",
+       y="Hour of Day") 
 
 ```
