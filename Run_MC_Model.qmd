@@ -105,17 +105,28 @@ Solar <-  function(month, hour) {
 
 ```{r Home}
 #   Pick 5000 hours at random
-foo <- as.integer(round(runif(5000)*23)) %>% 
+# foo <- as.integer(round(runif(5000)*23)) %>% 
+#   as_tibble() %>% 
+#   set_names(c("Hour")) 
+# 
+# #   Add a random month to each row
+# foo <- foo %>% 
+#   rowwise() %>% 
+#   mutate(Month=as.integer(round(runif(1)*11+1))) %>% 
+#   ungroup()
+
+#   Create 5760 samples of hours and months
+
+foo <-
+  gl(24, 240, labels=c(0:23)) %>% 
   as_tibble() %>% 
-  set_names(c("Hour")) 
+  set_names(c("Hour")) %>% 
+    mutate(Hour=as.integer(Hour)) %>% 
+  bind_cols(., rep(1:12, 480) %>% as_tibble() %>% set_names("Month"))
 
-#   Add a random month to each row
-foo <- foo %>% 
-  rowwise() %>% 
-  mutate(Month=as.integer(round(runif(1)*11+1))) %>% 
-  ungroup()
-
+##################
 #   Get the Temperature for that month and hour
+##################
 foo <- 
   foo %>% 
     rowwise() %>% 
@@ -124,17 +135,30 @@ foo <-
 Occupied <- "Occupied"
 Vacation <- "Vacation"
 
+##################
 #   Calculate kWh usage
+##################
 foo <-
   foo %>% 
   mutate(kWh=Home(Temp, Hour, Occupied)) %>% 
-  mutate(kWhb=Home(Temp, Hour, Vacation)) %>% 
+  mutate(kWhV=Home(Temp, Hour, Vacation)) %>% 
   ungroup()
 
+##################
 #   Add in cars
+##################
 
 foo <- foo %>% 
   mutate(Car=dexp(Hour)*1.7)
+
+##################
+#   Add Solar output
+##################
+
+foo <- foo %>% 
+  rowwise() %>% 
+  mutate(Sun=Solar(Month, Hour)) %>% 
+  ungroup()
 
 #   Make some plots
 
@@ -149,7 +173,7 @@ foo %>%
 foo %>% 
   # ungroup() %>% 
   filter(Month==6) %>% 
-  ggplot(aes(x=kWhb))+
+  ggplot(aes(x=kWhV))+
   facet_wrap(vars(Temp))+
   geom_histogram()
 
@@ -190,3 +214,36 @@ AugustDay %>%
        y="Hour of Day") 
 
 ```
+
+##        More plots
+
+```{r more plots}
+
+foo %>% 
+  mutate(Net_kWh=Sun-kWh) %>% 
+  group_by(Month) %>% 
+    summarise(Mon_Sun=mean(Sun)*24,
+              Mon_Net=mean(Net_kWh)*24,
+              Mon_Hom=mean(kWh)*24) %>% 
+  gt::gt()
+  
+
+foo %>% 
+  mutate(Net_kWh=Sun-kWhV) %>% 
+  filter(Hour==13) %>% 
+  ggplot(aes(x=kWh)) + 
+  geom_density() + 
+  facet_wrap(vars(Month))
+  
+
+
+
+```
+
+
+
+
+
+
+
+
