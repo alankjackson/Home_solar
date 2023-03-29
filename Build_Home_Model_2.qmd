@@ -205,6 +205,19 @@ Solar_old %>%
   geom_line()+
   labs(title="Old Data June 2022")
 
+#   Calc averages per day
+
+Daily <- Solar_old %>% 
+  group_by(Date) %>% 
+    summarize(Daily_total=sum(kWh))
+  mean(Daily$Daily_total)
+
+Daily <- Smart %>% 
+  mutate(Day=lubridate::date(Date)) %>% 
+  group_by(Day) %>% 
+    summarize(Daily_total=sum(Usage))
+  mean(Daily$Daily_total)
+
 foo2 <- 
 Solar_old %>% 
   left_join(., Smart, by=c(Timestamp="Date")) %>% 
@@ -212,6 +225,11 @@ Solar_old %>%
   filter(date(Timestamp) < mdy("11-1-2022")) %>%
   filter(HomekWh>0.0) %>%  # remove negatives
   filter(HomekWh<1.0) # remove car charging
+
+Daily <- foo2 %>% 
+  group_by(Date) %>% 
+    summarize(Daily_total=sum(HomekWh))
+  mean(Daily$Daily_total)
   
 foo2 %>% 
   ggplot(aes(x=Timestamp, y=HomekWh))+
@@ -259,7 +277,7 @@ foo2 <- foo2 %>%
 foo_sum_v <- foo2 %>% 
   group_by(date(Timestamp), ToD) %>% 
   filter(Vacation) %>% 
-     summarise(kWh=mean(HomekWh, na.rm = TRUE),
+     summarise(kWh=mean(HomekWh, na.rm = TRUE)*4,
                AvgD = mean(Dewpoint, na.rm=TRUE),  
                AvgT = mean(Temperature, na.rm=TRUE)) %>%  
   mutate(Temp = case_when(
@@ -277,7 +295,7 @@ foo_sum_v <- foo2 %>%
 foo_sum_o <- foo2 %>% 
   group_by(date(Timestamp), ToD) %>% 
   filter(!Vacation) %>% 
-     summarise(kWh=mean(HomekWh, na.rm = TRUE),
+     summarise(kWh=mean(HomekWh, na.rm = TRUE)*4,
                AvgD = mean(Dewpoint, na.rm=TRUE),  
                AvgT = mean(Temperature, na.rm=TRUE)) %>%  
   mutate(Temp = case_when(
@@ -291,12 +309,13 @@ foo_sum_o <- foo2 %>%
                      levels=c("Cold", "Cool", "Warm", "Hot", "Hell"))) %>% 
   mutate(Status="Occupied")
 
+
 rbind(foo_sum_v, foo_sum_o) %>% 
   ggplot(aes(x=kWh, y=ToD, fill=stat(x)))+
   ggridges::geom_density_ridges_gradient()+
   scale_fill_viridis_c(name = "Kilowatt-hours", option = "C")+
   facet_wrap(vars(Status)) +
-  labs(title="Power Usage by Times")
+  labs(title="Power Usage by Times (for each hour within time range)")
 
 foo_sum_v %>% 
   ggplot(aes(x=kWh, y=ToD, fill=stat(x)))+
