@@ -115,14 +115,25 @@ Solar <-  function(month, hour) {
 #   mutate(Month=as.integer(round(runif(1)*11+1))) %>% 
 #   ungroup()
 
-#   Create 5760 samples of hours and months
+#   Create 6912 samples of hours and months
+#   24 separate models
 
-foo <-
-  gl(24, 240, labels=c(0:23)) %>% 
+foo <- 
+  gl(24, 288, labels=c(1:24)) %>% 
   as_tibble() %>% 
-  set_names(c("Hour")) %>% 
-    mutate(Hour=as.integer(Hour)) %>% 
-  bind_cols(., rep(1:12, 480) %>% as_tibble() %>% set_names("Month"))
+  set_names(c("Model")) %>% 
+  bind_cols(., rep(gl(12,24),24) %>% as_tibble() %>% set_names("Month")) %>% 
+  mutate(Month=as.integer(Month)) %>%
+  bind_cols(., rep(rep(0:23, 288)) %>% as_tibble() %>% set_names("Hour"))
+   
+  
+
+# foo <-
+#   gl(24, 240, labels=c(0:23)) %>% 
+#   as_tibble() %>% 
+#   set_names(c("Hour")) %>% 
+#     mutate(Hour=as.integer(Hour)) %>% 
+#   bind_cols(., rep(1:12, 480) %>% as_tibble() %>% set_names("Month"))
 
 ##################
 #   Get the Temperature for that month and hour
@@ -159,6 +170,7 @@ foo <- foo %>%
   rowwise() %>% 
   mutate(Sun=Solar(Month, Hour)) %>% 
   ungroup()
+
 
 #   Make some plots
 
