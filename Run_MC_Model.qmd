@@ -43,6 +43,15 @@ Solar - for Solar output
 
 Ercot - for price
 
+* Definitions for signs
+ + Solar > 0
+ + kWh > 0
+ + car > 0
+ + battery charge < 0
+ + battery discharge > 0
+ + grid supply > 0
+ + grid receive < 0
+
 
 
 ## Home Usage Function
@@ -110,43 +119,70 @@ Battery <- function(Models, Start_pct=80, Min_pct=40){
   
   Models$Grid <- 0
   Models$Battery <- NA
+  Models$GridV <- 0
+  Models$BatteryV <- NA
   
   Flag <- 0 # Flag for new model
   # for (i in 1:10){
   for (i in 1:nrow(Models)){
     if (Flag != Models$Model[i]){ # start a new model
-      print("--1--")
       Flag <- Models$Model[i]
       Lag_Battery <- Capacity*Start_pct/100
+      Lag_BatteryV <- Capacity*Start_pct/100
     } else {
-      print("--2--")
       Lag_Battery <- Models$Battery[i-1]
+      Lag_BatteryV <- Models$BatteryV[i-1]
     }
     
     #   Excess is net demand. If >0 then solar exceeds demand.
     Excess <- Models$Sun[i] - Models$Car[i] - Models$kWh[i] # House and car usage offset by solar panels.
-    print(Excess)
+    ExcessV <- Models$Sun[i] - Models$kWhV[i] # House usage offset by solar panels.
     Batt_headroom <- Capacity - Lag_Battery # Room left to get to 100%
     Batt_tailroom <- Lag_Battery - Capacity*Min_pct/100 # Room left to fall to minimum
+    Batt_headroomV <- Capacity - Lag_BatteryV # Room left to get to 100%
+    Batt_tailroomV <- Lag_BatteryV - Capacity*Min_pct/100 # Room left to fall to minimum
     ########   add constraint on battery ability to charge
     Add_grid <- max(0, Excess - Batt_headroom) # power to add to grid
     Sub_grid <- max(0, Excess - Batt_tailroom) # power to take from grid
+    Add_gridV <- max(0, ExcessV - Batt_headroomV) # power to add to grid
+    Sub_gridV <- max(0, ExcessV - Batt_tailroomV) # power to take from grid
+    
+    #   Occupied
     if (Excess>0){ # yes Virginia we have excess electrons
       if (Lag_Battery<Capacity){ # Battery not fully charged
           Models$Battery[i] <-  Lag_Battery + Excess - Add_grid
-          Models$Grid[i] <- Add_grid
+          Models$Grid[i] <- - Add_grid
       } else { # battery fully charged
           Models$Battery[i] <-  Lag_Battery
           Models$Grid[i] <- -Excess
       } 
     }  else { # Nope, no excess electrons
       if (Batt_tailroom > 0) { # Battery still has available charge
-        Models$Battery[i] <- Lag_Battery + Excess - Sub_grid
-        Models$Grid[i] <- Sub_grid
+        Models$Battery[i] <- Lag_Battery + Excess + Sub_grid
+        Models$Grid[i] <- - Sub_grid
           # Models$Battery[i] <-  Lag_Battery + Excess
       } else { # Nope, battery at minimum
           Models$Battery[i] <-  Lag_Battery
-          Models$Grid[i] <- -Excess
+          Models$Grid[i] <- - Excess 
+      } 
+    } 
+    #   Vacation
+    if (ExcessV>0){ # yes Virginia we have excess electrons
+      if (Lag_BatteryV<Capacity){ # Battery not fully charged
+          Models$BatteryV[i] <-  Lag_BatteryV + ExcessV - Add_gridV
+          Models$GridV[i] <- Add_gridV
+      } else { # battery fully charged
+          Models$BatteryV[i] <-  Lag_BatteryV
+          Models$GridV[i] <- -ExcessV
+      } 
+    }  else { # Nope, no excess electrons
+      if (Batt_tailroomV > 0) { # Battery still has available charge
+        Models$BatteryV[i] <- Lag_BatteryV + ExcessV - Sub_gridV
+        Models$GridV[i] <- Sub_gridV
+          # Models$Battery[i] <-  Lag_Battery + Excess
+      } else { # Nope, battery at minimum
+          Models$BatteryV[i] <-  Lag_BatteryV
+          Models$GridV[i] <- -ExcessV
       } 
     } 
   } 
