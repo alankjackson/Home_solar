@@ -114,8 +114,6 @@ Battery <- function(Models, Start_pct=80, Min_pct=40){
   Capacity <- 13.5*3 # kWh for 3 batteries 
   
   Maxpower <- 5*3 # kW
-  Start_pct=80
-  Min_pct=40
   
   Models$Grid <- 0
   Models$Battery <- NA
@@ -186,6 +184,7 @@ Battery <- function(Models, Start_pct=80, Min_pct=40){
       } 
     } 
   } 
+  return(Models)
 }
 
 #############
@@ -194,37 +193,21 @@ Battery <- function(Models, Start_pct=80, Min_pct=40){
 ##        Test functions
 
 ```{r Home}
-#   Pick 5000 hours at random
-# foo <- as.integer(round(runif(5000)*23)) %>% 
-#   as_tibble() %>% 
-#   set_names(c("Hour")) 
-# 
-# #   Add a random month to each row
-# foo <- foo %>% 
-#   rowwise() %>% 
-#   mutate(Month=as.integer(round(runif(1)*11+1))) %>% 
-#   ungroup()
 
-#   Create 6912 samples of hours and months
-#   24 separate models
+#   Create 28800 samples of hours and months
+#   100 separate models
+#   288 = 12 months x 24 hours
+
+num_mod <- 100 # number of models
 
 foo <- 
-  gl(24, 288, labels=c(1:24)) %>% 
+  gl(num_mod, 288, labels=c(1:num_mod)) %>% 
   as_tibble() %>% 
   set_names(c("Model")) %>% 
-  bind_cols(., rep(gl(12,24),24) %>% as_tibble() %>% set_names("Month")) %>% 
+  bind_cols(., rep(gl(12,24),num_mod) %>% as_tibble() %>% set_names("Month")) %>% 
   mutate(Month=as.integer(Month)) %>%
-  bind_cols(., rep(rep(0:23, 288)) %>% as_tibble() %>% set_names("Hour"))
+  bind_cols(., rep(rep(0:23, 12*num_mod)) %>% as_tibble() %>% set_names("Hour"))
    
-  
-
-# foo <-
-#   gl(24, 240, labels=c(0:23)) %>% 
-#   as_tibble() %>% 
-#   set_names(c("Hour")) %>% 
-#     mutate(Hour=as.integer(Hour)) %>% 
-#   bind_cols(., rep(1:12, 480) %>% as_tibble() %>% set_names("Month"))
-
 ##################
 #   Get the Temperature for that month and hour
 ##################
@@ -345,6 +328,37 @@ foo %>%
 ##      Batteries
 
 ```{r batteries}
+
+
+
+foo1 <- Battery(foo, Start_pct=80, Min_pct=40)
+foo2 <- Battery(foo, Start_pct=80, Min_pct=60)
+foo3 <- Battery(foo, Start_pct=80, Min_pct=20)
+foo4 <- Battery(foo, Start_pct=80, Min_pct=80)
+
+grid <- foo1 %>% 
+  group_by(Model, Month) %>% 
+    summarize(Grid_plus=sum(Grid[Grid>0]),
+              Grid_minus=sum(Grid[Grid<0]),
+              GridV_plus=sum(GridV[GridV>0]),
+              GridV_minus=sum(GridV[GridV<0])) %>% 
+  group_by(Month) %>% 
+     summarize(From_avg=mean(Grid_plus),
+               From_sd=sd(Grid_plus),
+               To_avg=mean(Grid_minus),
+               To_sd=sd(Grid_minus),
+               FromV_avg=mean(GridV_plus),
+               FromV_sd=sd(GridV_plus),
+               ToV_avg=mean(GridV_minus),
+               ToV_sd=sd(GridV_minus))
+
+grid %>% 
+  pivot_longer(!Month, names_to=c("Grid", ".value"), 
+               names_sep = "_") %>% 
+  ggplot(aes(x=Month, y=avg, color=Grid)) +
+    geom_errorbar(aes(ymin=avg-sd, ymax=avg+sd), width=.1) +
+  geom_point()+
+  geom_line()
 
 ```
 
