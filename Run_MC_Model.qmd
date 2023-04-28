@@ -298,6 +298,8 @@ AugustDay %>%
        x="kWh",
        y="Hour of Day") 
 
+saveRDS(foo, paste0(path, "Models.rds"))
+
 ```
 
 ##        More plots
@@ -356,12 +358,40 @@ grid %>%
   pivot_longer(!Month, names_to=c("Grid", ".value"), 
                names_sep = "_") %>% 
   ggplot(aes(x=Month, y=avg, color=Grid)) +
-    geom_errorbar(aes(ymin=avg-sd, ymax=avg+sd), width=.1) +
+    geom_errorbar(aes(ymin=avg-sd, ymax=avg+sd), width=.2) +
   geom_point()+
   geom_line()
 
 ```
 
+##  Do a series of models, differing in minimum battery %
+
+```{r battery series}
+
+Model_series <- Battery(foo, Start_pct=80, Min_pct=20) %>% 
+  mutate(Batt_pct=20)
+
+for (pct in seq(30,100,10)){
+  Model_series <- Model_series %>% 
+    bind_rows(., Battery(foo, Start_pct=80, Min_pct=pct) %>% 
+                   mutate(Batt_pct=pct))
+}
+
+
+```
+
+##    Make some plots
+
+```{r battery series plots}
+
+Model_series %>% 
+  group_by(Month, Batt_pct) %>% 
+    summarize(Grid_total=sum(abs(Grid)),
+              Grid_totalV=sum(abs(GridV))) %>% 
+  ggplot(aes(color=Month, y=Grid_total, x=Batt_pct)) +
+  geom_point()
+
+```
 
 
 
