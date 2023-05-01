@@ -389,7 +389,22 @@ Model_series %>%
     summarize(Grid_total=sum(abs(Grid)),
               Grid_totalV=sum(abs(GridV))) %>% 
   ggplot(aes(color=Month, y=Grid_total, x=Batt_pct)) +
-  geom_point()
+  geom_point()+
+  labs(title="Grid Usage vs. Allowed Lowest Battery Charge",
+       subtitle="Occupied only",
+       y="kWh Grid Usage (2-way)",
+       x="Battery Percentage")
+
+Model_series %>% 
+  group_by(Month, Batt_pct) %>% 
+    summarize(Grid_total=sum(abs(Grid)),
+              Grid_totalV=sum(abs(GridV))) %>% 
+  ggplot(aes(color=Month, y=Grid_totalV, x=Batt_pct)) +
+  geom_point()+
+  labs(title="Grid Usage vs. Allowed Lowest Battery Charge",
+       subtitle="Vacation only",
+       y="kWh Grid Usage (2-way)",
+       x="Battery Percentage")
 
 ```
 
