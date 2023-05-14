@@ -33,7 +33,7 @@ ICDF_TempLong <- ICDF_Temperature %>%
 
 ```
 
-##    Functions
+## Functions
 
 Home - for Usage
 
@@ -43,16 +43,14 @@ Solar - for Solar output
 
 Ercot - for price
 
-* Definitions for signs
- + Solar > 0
- + kWh > 0
- + car > 0
- + battery charge < 0
- + battery discharge > 0
- + grid supply > 0
- + grid receive < 0
-
-
+-   Definitions for signs
+-   Solar \> 0
+-   kWh \> 0
+-   car \> 0
+-   battery charge \< 0
+-   battery discharge \> 0
+-   grid supply \> 0
+-   grid receive \< 0
 
 ## Home Usage Function
 
@@ -190,7 +188,7 @@ Battery <- function(Models, Start_pct=80, Min_pct=40){
 #############
 ```
 
-##        Test functions
+## Test functions
 
 ```{r Home}
 
@@ -302,7 +300,7 @@ saveRDS(foo, paste0(path, "Models.rds"))
 
 ```
 
-##        More plots
+## More plots
 
 ```{r more plots}
 
@@ -327,7 +325,7 @@ foo %>%
 
 ```
 
-##      Batteries
+## Batteries
 
 ```{r batteries}
 
@@ -364,7 +362,7 @@ grid %>%
 
 ```
 
-##  Do a series of models, differing in minimum battery %
+## Do a series of models, differing in minimum battery %
 
 ```{r battery series}
 
@@ -377,10 +375,11 @@ for (pct in seq(30,100,10)){
                    mutate(Batt_pct=pct))
 }
 
+saveRDS(Model_series, paste0(path, "Model_series.rds"))
 
 ```
 
-##    Make some plots
+## Make some plots
 
 ```{r battery series plots}
 
@@ -409,7 +408,46 @@ Model_series %>%
 ```
 
 
+##  Centerpoint charges
 
+```{r centerpoint}
+
+permonth <- 4.39
+perkWh <- 0.035341 # my calculation
+perkWh <- 0.03562 # according to Shell
+dollars_from <- 0.08201
+dollars_to   <- 0.09700
+
+usages <- tribble(~Month, ~ToGrid, ~FromGrid, ~DistCharge, ~perkWh, ~extra, ~charge,
+                  "April", 181.44,  343.73  ,  16.25, 0.03562, 0, 26.84,
+                  "March", 171.53,  337.98  ,  17.32, 0.03562, 0, 28.39,
+                  "Feb"  , 480.18,  650.03  ,  76.24, 0.049454, 40, 82.96,
+                  "Jan"  , 530.20,  617.20  ,  34.67, 0.049454, 0, 33.95,
+                  "Dec"  , 212.57,  723.17  ,  40.31, 0.049454, 0, 78.99)
+
+usages %>% 
+  mutate(Total_electrons=ToGrid+FromGrid) %>% 
+  # mutate(EstCharge=permonth + perkWh*Total_electrons + extra) %>% 
+  mutate(EstCharge2=permonth+perkWh*FromGrid + extra) %>% 
+  # mutate(EstCharge3=permonth+0.049454*FromGrid + extra) %>% 
+  # mutate(EstCharge4=permonth + perkWh*Total_electrons + extra) %>% 
+  select(Month, DistCharge, EstCharge2 )
+
+usages %>% 
+  mutate(DistCharge=DistCharge-extra) %>% 
+  mutate(Total_electrons=ToGrid+FromGrid) %>% 
+  mutate(EstCharge=permonth + perkWh*Total_electrons) %>% 
+  mutate(EstCharge=permonth + perkWh*FromGrid) %>% 
+  ggplot(aes(x=DistCharge, y=EstCharge)) +
+  geom_point() +
+  geom_smooth(method="lm")
+
+
+
+
+
+
+```
 
 
 
